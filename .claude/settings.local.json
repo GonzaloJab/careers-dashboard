@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(scp -i C:/Users/gonja/.ssh/id_rsa -o StrictHostKeyChecking=no d:/8.LAMI/0.CareerDashboard/backend/main.py d:/8.LAMI/0.CareerDashboard/backend/seed.py root@49.12.73.66:/opt/careers/)",
+      "Bash(scp -i /c/Users/gonja/.ssh/hetzner_key -o StrictHostKeyChecking=no d:/8.LAMI/0.CareerDashboard/backend/main.py d:/8.LAMI/0.CareerDashboard/backend/seed.py root@49.12.73.66:/opt/careers/)",
+      "Bash(scp -i /c/Users/gonja/.ssh/hetzner_key -o StrictHostKeyChecking=no d:/8.LAMI/0.CareerDashboard/backend/.env.example root@49.12.73.66:/opt/careers/.env)",
+      "Bash(ssh -i /c/Users/gonja/.ssh/hetzner_key -o StrictHostKeyChecking=no root@49.12.73.66 \"ls -la /opt/careers/\")",
+      "Bash(ssh -i /c/Users/gonja/.ssh/hetzner_key -o StrictHostKeyChecking=no root@49.12.73.66 \"cd /opt/careers && source venv/bin/activate && python -c 'from main import app; print\\(\\\\\"OK\\\\\"\\)' 2>&1\")"
+    ]
+  }
+}
