@@ -1,0 +1,60 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 16px; -webkit-tap-highlight-color: transparent; }
+body { overflow-x: hidden; }
+#root { width: 100%; }
+
+/* Center main content on wide screens */
+.page-wrap { margin-left: auto; margin-right: auto; width: 100%; }
+@media (min-width: 900px) {
+  .page-wrap { max-width: 1100px; }
+}
+
+/* (apply panel removed; inline apply form now) */
+
+/* Job page actions: back button slides left when applying */
+.job-actions .job-back-btn { transform: translateX(0); }
+.job-actions.apply-open .job-back-btn { transform: translateX(-10px); }
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #333; border-radius: 99px; }
+select option { background: #1a1a1a; color: #fff; }
+input, select, textarea, button { font-family: inherit; }
+
+@keyframes fadeUp { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:translateY(0); } }
+@keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
+@keyframes pinkPulse { 0%,100% { box-shadow:0 0 0 0 rgba(246,4,183,0); } 50% { box-shadow:0 0 16px 2px rgba(246,4,183,0.2); } }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.job-card:hover { border-color:#f604b7 !important; background:#262626 !important; transform:translateY(-2px); }
+.job-card { transition: border-color 0.2s, background 0.2s, transform 0.2s; }
+.pill-btn { transition: all 0.15s; }
+.pill-btn:hover { border-color:#f604b7 !important; color:#f604b7 !important; }
+.tr-hover:hover { background:#232323 !important; cursor:pointer; }
+.btn-pink { transition: opacity 0.15s, transform 0.1s; }
+.btn-pink:hover:not(:disabled) { opacity:0.88; }
+.btn-pink:active:not(:disabled) { transform:scale(0.98); }
+
+@media (max-width:640px) {
+  .desktop-only { display:none !important; }
+  .nav-links { display:none !important; }
+
+  /* Reduce horizontal padding + stack content nicely on phones */
+  .top-nav { padding: 12px 14px !important; }
+  .top-nav > div { gap: 8px !important; }
+  .top-nav .brand-logo { height: 56px !important; }
+  .top-nav .nav-title { padding-bottom: 6px !important; }
+
+  .hero { padding: 28px 14px 22px !important; }
+  .filters-row { padding: 0 14px 14px !important; display: grid !important; grid-template-columns: 1fr !important; gap: 10px !important; }
+  .filters-row > div { width: 100% !important; }
+  .filters-row button { width: 100% !important; justify-content: space-between !important; }
+
+  .jobs-list { padding: 0 14px 48px !important; max-width: 100% !important; }
+  .job-card { padding: 16px !important; }
+
+  .site-footer { padding: 16px 14px !important; }
+}
+@media (min-width:641px) {
+  .mobile-only { display:none !important; }
+}
+
