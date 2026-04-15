@@ -1,0 +1,15 @@
+# Python / FastAPI
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+.env
+
+# Node / React
+node_modules/
+dist/
+.eslintcache
+
+# System
+.DS_Store
+*.log
