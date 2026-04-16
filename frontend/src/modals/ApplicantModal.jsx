@@ -111,6 +111,8 @@ export default function ApplicantModal({ applicant, job, onClose, onStatusChange
             ) : (
               <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.border }}>AI —</span>
             )
+          ) : applicant.aiStatus === "no_text" ? (
+            <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: "#ff9944" }}>AI skipped (non‑text PDF)</span>
           ) : (
             <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.muted }}>AI waiting</span>
           )}
@@ -154,13 +156,15 @@ export default function ApplicantModal({ applicant, job, onClose, onStatusChange
         <div style={{ marginTop: 18, background: "#171717", border: `1px solid ${T.border}`, borderRadius: 12, padding: "12px 14px" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
             <div style={{ fontFamily: "'Afacad Flux',sans-serif", fontWeight: 650, fontSize: 14, color: T.white }}>AI assessment</div>
-            <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: applicant.aiStatus === "done" ? T.mutedL : T.muted }}>
-              {applicant.aiStatus === "done" ? "done" : "waiting"}
+            <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: applicant.aiStatus === "done" ? T.mutedL : applicant.aiStatus === "no_text" ? "#ff9944" : T.muted }}>
+              {applicant.aiStatus === "done" ? "done" : applicant.aiStatus === "no_text" ? "skipped" : "waiting"}
             </div>
           </div>
           {applicant.aiStatus !== "done" ? (
             <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.muted, marginTop: 8, lineHeight: 1.6 }}>
-              Assessment is queued. You can still work with the applicant normally.
+              {applicant.aiStatus === "no_text"
+                ? "CV appears to be a non-text (scanned) PDF, so AI assessment was skipped. You can still work with the applicant normally."
+                : "Assessment is queued. You can still work with the applicant normally."}
             </div>
           ) : ai ? (
             <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 10 }}>

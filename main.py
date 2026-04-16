@@ -320,9 +320,12 @@ Rules:
 async def assess_applicant_async(applicant_id: int, job_id: int, cv_text: str):
     try:
         if not cv_text.strip():
-            # Keep it as waiting/done? We'll mark done with empty assessment so UI can proceed.
+            # Non-text / empty extraction: do not call LLM.
             db = get_db()
-            db.execute("UPDATE applicants SET ai_status=?, ai_score=?, ai_assessment=? WHERE id=?", ("done", None, None, applicant_id))
+            db.execute(
+                "UPDATE applicants SET ai_status=?, ai_score=?, ai_assessment=? WHERE id=?",
+                ("no_text", None, None, applicant_id),
+            )
             db.commit()
             db.close()
             return
@@ -568,7 +571,7 @@ async def apply(
     full_name = f"{first_name} {last_name}".strip()
     db = get_db()
     try:
-    cur = db.execute("""
+        cur = db.execute("""
             INSERT INTO applicants (job_id, first_name, last_name, email, name, linkedin, cv_path, answers)
             VALUES (?,?,?,?,?,?,?,?)
         """, (job_id, first_name, last_name, email, full_name, linkedin, str(cv_path), json.dumps(answers_obj)))
@@ -595,20 +598,28 @@ async def apply(
         pass
     db.close()
 
-    # Set AI assessment status to waiting right away (non-blocking for recruiter workflow).
-    try:
-        dbs = get_db()
-        dbs.execute("UPDATE applicants SET ai_status=? WHERE id=?", ("waiting", applicant_id))
-        dbs.commit()
-        dbs.close()
-    except Exception:
-        pass
-
     # Extract + parse CV in background (best-effort)
     cv_text = extract_cv_text(cv_path)
-    if cv_text:
+    if cv_text and cv_text.strip():
+        # Set AI assessment status to waiting right away (non-blocking for recruiter workflow).
+        try:
+            dbs = get_db()
+            dbs.execute("UPDATE applicants SET ai_status=? WHERE id=?", ("waiting", applicant_id))
+            dbs.commit()
+            dbs.close()
+        except Exception:
+            pass
         background_tasks.add_task(parse_cv_async, applicant_id, cv_text)
         background_tasks.add_task(assess_applicant_async, applicant_id, job_id, cv_text)
+    else:
+        # Keep applicant usable, but show recruiter that AI was skipped due to non-text PDF.
+        try:
+            dbs2 = get_db()
+            dbs2.execute("UPDATE applicants SET ai_status=?, ai_score=?, ai_assessment=? WHERE id=?", ("no_text", None, None, applicant_id))
+            dbs2.commit()
+            dbs2.close()
+        except Exception:
+            pass
 
     return {"success": True, "applicant_id": applicant_id}
 

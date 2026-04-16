@@ -406,6 +406,8 @@ export default function Dashboard({ jobs, setJobs, applicants: initApps, onBack,
                         ) : (
                           <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.border }}>—</span>
                         )
+                      ) : a.aiStatus === "no_text" ? (
+                        <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: "#ff9944" }}>non‑text PDF</span>
                       ) : (
                         <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.muted }}>waiting</span>
                       )}
@@ -469,6 +471,8 @@ export default function Dashboard({ jobs, setJobs, applicants: initApps, onBack,
                         {a.aiScore}/5 AI
                       </span>
                     ) : null
+                  ) : a.aiStatus === "no_text" ? (
+                    <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: "#ff9944" }}>AI skipped</span>
                   ) : (
                     <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.muted }}>AI waiting</span>
                   )}
