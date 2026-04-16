@@ -12,6 +12,28 @@ export default function RecruiterPage() {
 
   const authHeader = useMemo(() => recruiterAuthHeader(pwd), [pwd]);
 
+  async function loadApplicants(header) {
+    const data = await apiJson("/applicants", { headers: { Authorization: header } });
+    setApps(
+      (data || []).map((a) => ({
+        id: a.id,
+        jobId: a.job_id,
+        name: a.name || "—",
+        email: a.email || "",
+        linkedin: a.linkedin || "",
+        status: a.status || "new",
+        date: (a.applied_at || "").slice(0, 10) || "",
+        answers: a.answers || {},
+        parsedCv: a.parsed_cv || null,
+        cvPath: a.cv_path || "",
+        aiStatus: a.ai_status || "waiting",
+        aiScore: typeof a.ai_score === "number" ? a.ai_score : a.ai_score ?? null,
+        aiAssessment: a.ai_assessment || null,
+      }))
+    );
+    return data;
+  }
+
   useEffect(() => {
     apiJson("/jobs")
       .then(setJobs)
@@ -24,22 +46,8 @@ export default function RecruiterPage() {
     const cur = getRecruiterPassword();
     if (!cur) return;
     const header = recruiterAuthHeader(cur);
-    apiJson("/applicants", { headers: { Authorization: header } })
-      .then((data) => {
-        setApps(
-          (data || []).map((a) => ({
-            id: a.id,
-            jobId: a.job_id,
-            name: a.name || "—",
-            email: a.email || "",
-            linkedin: a.linkedin || "",
-            status: a.status || "new",
-            date: (a.applied_at || "").slice(0, 10) || "",
-            answers: a.answers || {},
-            parsedCv: a.parsed_cv || null,
-            cvPath: a.cv_path || "",
-          }))
-        );
+    loadApplicants(header)
+      .then(() => {
         setPwd(cur);
         setAuthOk(true);
         setAuthErr("");
@@ -61,22 +69,8 @@ export default function RecruiterPage() {
     }
     const header = recruiterAuthHeader(cur);
     try {
-      const data = await apiJson("/applicants", { headers: { Authorization: header } });
+      await loadApplicants(header);
       setRecruiterPassword(cur);
-      setApps(
-        (data || []).map((a) => ({
-          id: a.id,
-          jobId: a.job_id,
-          name: a.name || "—",
-          email: a.email || "",
-          linkedin: a.linkedin || "",
-          status: a.status || "new",
-          date: (a.applied_at || "").slice(0, 10) || "",
-          answers: a.answers || {},
-          parsedCv: a.parsed_cv || null,
-          cvPath: a.cv_path || "",
-        }))
-      );
       setAuthOk(true);
     } catch (err) {
       setRecruiterPassword("");
@@ -159,6 +153,20 @@ export default function RecruiterPage() {
     );
   }
 
-  return <Dashboard jobs={jobs} setJobs={setJobs} applicants={apps} authHeader={authHeader} onBack={() => (window.location.href = "/")} />;
+  return (
+    <Dashboard
+      jobs={jobs}
+      setJobs={setJobs}
+      applicants={apps}
+      authHeader={authHeader}
+      onBack={() => (window.location.href = "/")}
+      onRefreshApplicants={async () => {
+        const cur = getRecruiterPassword();
+        if (!cur) return;
+        const header = recruiterAuthHeader(cur);
+        await loadApplicants(header);
+      }}
+    />
+  );
 }
 

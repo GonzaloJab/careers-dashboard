@@ -53,8 +53,16 @@ input, select, textarea, button { font-family: inherit; }
   .job-card { padding: 16px !important; }
 
   .site-footer { padding: 16px 14px !important; }
+
+  /* Recruiter: create/edit position modal should behave like a bottom sheet */
+  .jobform-overlay { align-items: flex-end !important; }
+  .jobform-sheet { border-radius: 20px 20px 0 0 !important; max-height: 95vh !important; }
 }
 @media (min-width:641px) {
   .mobile-only { display:none !important; }
+
+  /* Recruiter: create/edit position modal centered and a bit larger */
+  .jobform-overlay { padding: 24px 18px !important; }
+  .jobform-sheet { max-height: 88vh !important; }
 }
 

@@ -5,5 +5,5 @@ export const CONFIG = {
 
 export const LOGO_URL = "/assets/Logo H blanco.png";
 
-export const API_BASE = "/api";
+export const API_BASE = import.meta.env.VITE_API_BASE || "/api";
 

@@ -7,6 +7,7 @@ export default function ApplicantModal({ applicant, job, onClose, onStatusChange
   const score = computeScore(job, applicant.answers);
   const ms = mustScore(job, applicant.answers);
   const [rejectSending, setRejectSending] = useState(false);
+  const ai = applicant.aiAssessment || null;
   const defaultRejectMessage = useMemo(() => {
     const name = applicant?.name || "{name}";
     return (
@@ -102,6 +103,17 @@ export default function ApplicantModal({ applicant, job, onClose, onStatusChange
               {ms.hit}/{ms.total} must-haves
             </span>
           )}
+          {applicant.aiStatus === "done" ? (
+            typeof applicant.aiScore === "number" ? (
+              <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: applicant.aiScore >= 4 ? "#50c878" : applicant.aiScore >= 3 ? T.pink : "#ff9944" }}>
+                {applicant.aiScore}/5 AI
+              </span>
+            ) : (
+              <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.border }}>AI —</span>
+            )
+          ) : (
+            <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.muted }}>AI waiting</span>
+          )}
           {applicant.linkedin && (
             <a
               href={applicant.linkedin}
@@ -137,6 +149,56 @@ export default function ApplicantModal({ applicant, job, onClose, onStatusChange
           >
             Download CV
           </button>
+        </div>
+
+        <div style={{ marginTop: 18, background: "#171717", border: `1px solid ${T.border}`, borderRadius: 12, padding: "12px 14px" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+            <div style={{ fontFamily: "'Afacad Flux',sans-serif", fontWeight: 650, fontSize: 14, color: T.white }}>AI assessment</div>
+            <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: applicant.aiStatus === "done" ? T.mutedL : T.muted }}>
+              {applicant.aiStatus === "done" ? "done" : "waiting"}
+            </div>
+          </div>
+          {applicant.aiStatus !== "done" ? (
+            <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.muted, marginTop: 8, lineHeight: 1.6 }}>
+              Assessment is queued. You can still work with the applicant normally.
+            </div>
+          ) : ai ? (
+            <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 10 }}>
+              {ai.summary ? (
+                <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 13, color: T.mutedL, lineHeight: 1.6 }}>{ai.summary}</div>
+              ) : null}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div style={{ background: "#141414", border: `1px solid ${T.border}`, borderRadius: 10, padding: "10px 12px" }}>
+                  <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 11, color: T.muted, marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.07em" }}>
+                    Pros
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {(ai.pros || []).slice(0, 8).map((p, idx) => (
+                      <div key={idx} style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.mutedL, lineHeight: 1.5 }}>
+                        · {p}
+                      </div>
+                    ))}
+                    {(!ai.pros || ai.pros.length === 0) && <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.border }}>—</div>}
+                  </div>
+                </div>
+                <div style={{ background: "#141414", border: `1px solid ${T.border}`, borderRadius: 10, padding: "10px 12px" }}>
+                  <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 11, color: T.muted, marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.07em" }}>
+                    Cons
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {(ai.cons || []).slice(0, 8).map((c, idx) => (
+                      <div key={idx} style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.mutedL, lineHeight: 1.5 }}>
+                        · {c}
+                      </div>
+                    ))}
+                    {(!ai.cons || ai.cons.length === 0) && <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.border }}>—</div>}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.border, marginTop: 8 }}>No assessment output.</div>
+          )}
         </div>
 
         <div style={{ marginTop: 22, display: "flex", flexDirection: "column", gap: 14 }}>

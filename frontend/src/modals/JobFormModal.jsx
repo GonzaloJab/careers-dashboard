@@ -15,6 +15,7 @@ export default function JobFormModal({ initial, onClose, onSave }) {
     status: "drafting",
     questions: [],
     criteria: [],
+    ai_requirements: "",
     rejection_template:
       "Hi {name},\n\nThank you for applying. After reviewing your application, we will not be moving forward at this time.\n\nWe appreciate your interest and encourage you to apply for future openings.\n\nBest regards,\nLaminar Careers",
   };
@@ -55,16 +56,18 @@ export default function JobFormModal({ initial, onClose, onSave }) {
   }
 
   const valid = form.title && form.description && form.questions.length > 0;
+  const qReady = (qForm.label || "").trim().length > 0 && (qForm.options || "").trim().length > 0;
 
   return (
     <div
+      className="jobform-overlay"
       style={{
         position: "fixed",
         inset: 0,
         zIndex: 1100,
         background: "rgba(0,0,0,0.82)",
         display: "flex",
-        alignItems: "flex-end",
+        alignItems: "center",
         justifyContent: "center",
         animation: "fadeIn 0.15s",
       }}
@@ -73,13 +76,14 @@ export default function JobFormModal({ initial, onClose, onSave }) {
       }}
     >
       <div
+        className="jobform-sheet"
         style={{
           background: T.surf,
           border: `1px solid ${T.border}`,
-          borderRadius: "20px 20px 0 0",
+          borderRadius: 20,
           width: "100%",
-          maxWidth: 600,
-          maxHeight: "95vh",
+          maxWidth: 760,
+          maxHeight: "92vh",
           overflowY: "auto",
           padding: "28px 22px 48px",
           animation: "fadeUp 0.3s cubic-bezier(0.22,1,0.36,1)",
@@ -139,6 +143,27 @@ export default function JobFormModal({ initial, onClose, onSave }) {
             onChange={(e) => set("rejection_template", e.target.value)}
             multiline
             required={false}
+          />
+        </div>
+
+        {/* AI assessment */}
+        <div style={{ marginBottom: 22 }}>
+          <div style={{ fontFamily: "'Afacad Flux',sans-serif", fontWeight: 600, fontSize: 16, color: T.white, marginBottom: 10 }}>
+            AI assessment requirements{" "}
+            <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.muted, fontWeight: 400 }}>
+              — non-deterministic guidelines for the model
+            </span>
+          </div>
+          <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.muted, marginBottom: 10, lineHeight: 1.6 }}>
+            One per line. Used to generate a 0–5 AI score with pros/cons. This never blocks applicants.
+          </div>
+          <Input
+            label=""
+            value={form.ai_requirements || ""}
+            onChange={(e) => set("ai_requirements", e.target.value)}
+            multiline
+            required={false}
+            placeholder={"e.g.\nStrong communication with clients\nPayments experience (issuer/acquirer)\nComfortable owning ambiguous work"}
           />
         </div>
 
@@ -208,12 +233,14 @@ export default function JobFormModal({ initial, onClose, onSave }) {
                 style={{
                   padding: "8px",
                   borderRadius: 8,
-                  border: `1px solid ${T.border}`,
-                  background: "transparent",
-                  color: T.mutedL,
+                  border: `1px solid ${qReady ? "rgba(246,4,183,0.6)" : T.border}`,
+                  background: qReady ? T.pink : "transparent",
+                  color: qReady ? "white" : T.mutedL,
                   cursor: "pointer",
                   fontFamily: "'DM Sans',sans-serif",
                   fontSize: 13,
+                  fontWeight: 700,
+                  animation: qReady ? "pinkPulse 1.4s ease-in-out infinite" : "none",
                 }}
               >
                 + Add question

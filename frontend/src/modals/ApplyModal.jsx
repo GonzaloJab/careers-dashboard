@@ -297,11 +297,11 @@ export default function ApplyModal({ job, onClose, onSubmit }) {
               <div style={{ fontFamily: "'Afacad Flux',sans-serif", fontWeight: 600, fontSize: 16, color: file ? T.pink : T.white }}>
                 {file ? file.name : "Tap or drag your CV here"}
               </div>
-              <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.muted, marginTop: 5 }}>PDF or DOCX · max 5 MB</div>
+              <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.muted, marginTop: 5 }}>PDF only · max 5 MB</div>
               <input
                 ref={fileRef}
                 type="file"
-                accept=".pdf,.docx"
+                accept=".pdf"
                 style={{ display: "none" }}
                 onChange={(e) => setFile(e.target.files[0])}
               />

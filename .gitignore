@@ -9,6 +9,7 @@ __pycache__/
 frontend/node_modules/
 frontend/dist/
 .eslintcache
+.env.local
 
 # System
 .DS_Store
@@ -21,3 +22,6 @@ cvs/
 .claude/
 CLAUDE_CODE_START.md
 CLAUDE_CODE_CONTEXT.md
+
+# Local scripts
+scripts/

@@ -15,6 +15,7 @@ import smtplib
 from email.message import EmailMessage
 import requests
 import re
+from typing import Any, Dict, List, Optional
 
 app = FastAPI(title="Laminar Careers API")
 security = HTTPBasic()
@@ -26,6 +27,11 @@ DB_PATH       = Path(os.getenv("DB_PATH") or _default_db)
 CV_DIR        = Path(os.getenv("CV_DIR") or _default_cv)
 OPENAI_KEY    = os.getenv("OPENAI_API_KEY", "")
 RECRUITER_PWD = os.getenv("RECRUITER_PASSWORD", "changeme")
+
+# OpenRouter (OpenAI-compatible)
+OPENROUTER_KEY = os.getenv("OPENROUTER_API_KEY", "")
+OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "gpt-4o-mini")
+OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 
 SMTP_HOST     = os.getenv("SMTP_HOST", "")
 SMTP_PORT     = int(os.getenv("SMTP_PORT", "587") or "587")
@@ -39,7 +45,7 @@ MS_CLIENT_ID       = os.getenv("MS_CLIENT_ID", "")
 MS_CLIENT_SECRET   = os.getenv("MS_CLIENT_SECRET", "")
 MS_MAIL_SENDER     = os.getenv("MS_MAIL_SENDER", MAIL_FROM)  # user principal name
 
-_graph_token_cache: dict[str, object] = {"access_token": None, "expires_at": 0}
+_graph_token_cache: Dict[str, Any] = {"access_token": None, "expires_at": 0}
 
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
@@ -65,6 +71,7 @@ def init_db():
             status      TEXT DEFAULT 'drafting',
             questions   TEXT DEFAULT '[]',
             criteria    TEXT DEFAULT '[]',
+            ai_requirements TEXT DEFAULT '',
             rejection_template TEXT DEFAULT '',
             created_at  TEXT DEFAULT CURRENT_TIMESTAMP
         );
@@ -79,6 +86,9 @@ def init_db():
             cv_path    TEXT,
             answers    TEXT DEFAULT '{}',
             parsed_cv  TEXT,
+            ai_status  TEXT DEFAULT 'waiting',
+            ai_score   INTEGER,
+            ai_assessment TEXT,
             status     TEXT DEFAULT 'new',
             applied_at TEXT DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (job_id) REFERENCES jobs(id)
@@ -92,6 +102,8 @@ def init_db():
         db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_public_id ON jobs(public_id)")
     if "rejection_template" not in job_cols:
         db.execute("ALTER TABLE jobs ADD COLUMN rejection_template TEXT")
+    if "ai_requirements" not in job_cols:
+        db.execute("ALTER TABLE jobs ADD COLUMN ai_requirements TEXT DEFAULT ''")
 
     app_cols = {r["name"] for r in db.execute("PRAGMA table_info(applicants)").fetchall()}
     if "first_name" not in app_cols:
@@ -100,6 +112,12 @@ def init_db():
         db.execute("ALTER TABLE applicants ADD COLUMN last_name TEXT")
     if "email" not in app_cols:
         db.execute("ALTER TABLE applicants ADD COLUMN email TEXT")
+    if "ai_status" not in app_cols:
+        db.execute("ALTER TABLE applicants ADD COLUMN ai_status TEXT DEFAULT 'waiting'")
+    if "ai_score" not in app_cols:
+        db.execute("ALTER TABLE applicants ADD COLUMN ai_score INTEGER")
+    if "ai_assessment" not in app_cols:
+        db.execute("ALTER TABLE applicants ADD COLUMN ai_assessment TEXT")
 
     # Prevent duplicate applications per job+email (best-effort).
     db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_applicants_job_email ON applicants(job_id, email)")
@@ -227,7 +245,7 @@ def require_auth(creds: HTTPBasicCredentials = Depends(security)):
     return creds
 
 # ── JSON helpers ───────────────────────────────────────────────
-def _json_loads_or(value: str | None, fallback):
+def _json_loads_or(value: Optional[str], fallback):
     if value is None:
         return fallback
     try:
@@ -240,6 +258,7 @@ def _job_row_to_api(row: sqlite3.Row) -> dict:
     d = dict(row)
     d["questions"] = _json_loads_or(d.get("questions"), [])
     d["criteria"] = _json_loads_or(d.get("criteria"), [])
+    d["ai_requirements"] = d.get("ai_requirements") or ""
     return d
 
 
@@ -248,9 +267,114 @@ def _applicant_row_to_api(row: sqlite3.Row) -> dict:
     # Normalize JSON-ish columns
     d["answers"] = _json_loads_or(d.get("answers"), {})
     d["parsed_cv"] = _json_loads_or(d.get("parsed_cv"), None)
+    d["ai_assessment"] = _json_loads_or(d.get("ai_assessment"), None)
     d["job_questions"] = _json_loads_or(d.get("job_questions"), [])
     d["job_criteria"] = _json_loads_or(d.get("job_criteria"), [])
     return d
+
+# ── AI assessment (OpenRouter) ─────────────────────────────────
+def _openrouter_client() -> OpenAI:
+    if not OPENROUTER_KEY:
+        raise RuntimeError("OPENROUTER_API_KEY is not configured")
+    return OpenAI(api_key=OPENROUTER_KEY, base_url=OPENROUTER_BASE_URL)
+
+
+def _build_ai_prompt(job: dict, ai_requirements: str, cv_text: str) -> str:
+    # Requirements are free-form, non-deterministic guidance from recruiter.
+    req_lines = [ln.strip() for ln in (ai_requirements or "").splitlines() if ln.strip()]
+    req_block = "\n".join(f"- {ln}" for ln in req_lines) if req_lines else "- (none provided)"
+    return f"""You are assessing a job candidate for this position:
+
+Title: {job.get('title','')}
+Team: {job.get('team','')}
+Location: {job.get('location','')}
+Mode: {job.get('remote','')}
+Seniority: {job.get('seniority','')}
+Type: {job.get('type','')}
+
+Job description:
+{job.get('description','')}
+
+AI Requirements:
+{req_block}
+
+Candidate CV text:
+{cv_text[:12000]}
+
+Return STRICT JSON only, no markdown.
+Schema:
+{{
+  "score": 0,
+  "summary": "",
+  "pros": [""],
+  "cons": [""]
+}}
+
+Rules:
+- score must be an integer from 0 to 5.
+- summary must be 2-4 sentences, concrete.
+- pros/cons should be bullet-like short phrases (3-6 items each if possible).
+"""
+
+
+async def assess_applicant_async(applicant_id: int, job_id: int, cv_text: str):
+    try:
+        if not cv_text.strip():
+            # Keep it as waiting/done? We'll mark done with empty assessment so UI can proceed.
+            db = get_db()
+            db.execute("UPDATE applicants SET ai_status=?, ai_score=?, ai_assessment=? WHERE id=?", ("done", None, None, applicant_id))
+            db.commit()
+            db.close()
+            return
+
+        db = get_db()
+        job_row = db.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
+        if not job_row:
+            db.close()
+            return
+        job = _job_row_to_api(job_row)
+        ai_req = job.get("ai_requirements") or ""
+        db.close()
+
+        prompt = _build_ai_prompt(job, ai_req, cv_text)
+
+        client = _openrouter_client()
+        resp = client.chat.completions.create(
+            model=OPENROUTER_MODEL,
+            messages=[
+                {"role": "system", "content": "You are a meticulous recruiting assistant."},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.2,
+            max_tokens=700,
+        )
+        content = (resp.choices[0].message.content or "").strip()
+        parsed = json.loads(content)
+
+        score = parsed.get("score")
+        if isinstance(score, bool):
+            score = None
+        if isinstance(score, (int, float)):
+            score = int(score)
+        if score is not None and (score < 0 or score > 5):
+            score = None
+
+        db2 = get_db()
+        db2.execute(
+            "UPDATE applicants SET ai_status=?, ai_score=?, ai_assessment=? WHERE id=?",
+            ("done", score, json.dumps(parsed), applicant_id),
+        )
+        db2.commit()
+        db2.close()
+    except Exception as e:
+        print(f"AI assessment error for applicant {applicant_id}: {e}")
+        try:
+            db3 = get_db()
+            db3.execute("UPDATE applicants SET ai_status=? WHERE id=?", ("waiting", applicant_id))
+            db3.commit()
+            db3.close()
+        except Exception:
+            pass
 
 # ── OpenAI CV parsing ─────────────────────────────────────────
 async def parse_cv_async(applicant_id: int, cv_text: str):
@@ -305,7 +429,7 @@ def extract_cv_text(path: Path) -> str:
             from pypdf import PdfReader  # type: ignore
 
             reader = PdfReader(str(path))
-            parts: list[str] = []
+            parts: List[str] = []
             for page in reader.pages:
                 parts.append(page.extract_text() or "")
             return "\n".join(parts).strip()
@@ -355,8 +479,8 @@ def create_job(job: dict, _=Depends(require_auth)):
     public_id = job.get("public_id") or new_public_id()
     db = get_db()
     cur = db.execute("""
-        INSERT INTO jobs (public_id,title,team,location,remote,seniority,type,description,status,questions,criteria,rejection_template)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+        INSERT INTO jobs (public_id,title,team,location,remote,seniority,type,description,status,questions,criteria,ai_requirements,rejection_template)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
     """, (
         public_id,
         job.get("title"), job.get("team"), job.get("location"),
@@ -364,6 +488,7 @@ def create_job(job: dict, _=Depends(require_auth)):
         job.get("description"), job.get("status","drafting"),
         json.dumps(job.get("questions",[])),
         json.dumps(job.get("criteria",[])),
+        (job.get("ai_requirements") or ""),
         job.get("rejection_template","") or "",
     ))
     db.commit()
@@ -377,13 +502,14 @@ def update_job(job_id: int, job: dict, _=Depends(require_auth)):
     db = get_db()
     db.execute("""
         UPDATE jobs SET title=?,team=?,location=?,remote=?,seniority=?,
-        type=?,description=?,status=?,questions=?,criteria=?,rejection_template=? WHERE id=?
+        type=?,description=?,status=?,questions=?,criteria=?,ai_requirements=?,rejection_template=? WHERE id=?
     """, (
         job.get("title"), job.get("team"), job.get("location"),
         job.get("remote"), job.get("seniority"), job.get("type"),
         job.get("description"), job.get("status"),
         json.dumps(job.get("questions",[])),
         json.dumps(job.get("criteria",[])),
+        (job.get("ai_requirements") or ""),
         job.get("rejection_template","") or "",
         job_id,
     ))
@@ -424,6 +550,10 @@ async def apply(
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid answers JSON")
 
+    # Enforce PDF-only uploads (UI should also restrict).
+    if not (cv.filename or "").lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF CVs are supported")
+
     # Save CV file (temporary unique name first)
     job_cv_dir = CV_DIR / str(job_id)
     job_cv_dir.mkdir(parents=True, exist_ok=True)
@@ -438,7 +568,7 @@ async def apply(
     full_name = f"{first_name} {last_name}".strip()
     db = get_db()
     try:
-        cur = db.execute("""
+    cur = db.execute("""
             INSERT INTO applicants (job_id, first_name, last_name, email, name, linkedin, cv_path, answers)
             VALUES (?,?,?,?,?,?,?,?)
         """, (job_id, first_name, last_name, email, full_name, linkedin, str(cv_path), json.dumps(answers_obj)))
@@ -465,10 +595,20 @@ async def apply(
         pass
     db.close()
 
+    # Set AI assessment status to waiting right away (non-blocking for recruiter workflow).
+    try:
+        dbs = get_db()
+        dbs.execute("UPDATE applicants SET ai_status=? WHERE id=?", ("waiting", applicant_id))
+        dbs.commit()
+        dbs.close()
+    except Exception:
+        pass
+
     # Extract + parse CV in background (best-effort)
     cv_text = extract_cv_text(cv_path)
     if cv_text:
         background_tasks.add_task(parse_cv_async, applicant_id, cv_text)
+        background_tasks.add_task(assess_applicant_async, applicant_id, job_id, cv_text)
 
     return {"success": True, "applicant_id": applicant_id}
 

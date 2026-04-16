@@ -8,7 +8,7 @@ import { Pill, StatusBadge, Tag } from "../ui";
 import ApplicantModal from "../modals/ApplicantModal";
 import JobFormModal from "../modals/JobFormModal";
 
-export default function Dashboard({ jobs, setJobs, applicants: initApps, onBack, authHeader }) {
+export default function Dashboard({ jobs, setJobs, applicants: initApps, onBack, authHeader, onRefreshApplicants }) {
   const [apps, setApps] = useState(initApps);
   const [sortK, setSortK] = useState("date");
   const [sortD, setSortD] = useState("desc");
@@ -77,6 +77,18 @@ export default function Dashboard({ jobs, setJobs, applicants: initApps, onBack,
   const jobMap = Object.fromEntries(jobs.map((j) => [j.id, j]));
   const appCount = (id) => apps.filter((a) => a.jobId === id).length;
 
+  function sortVal(app, key) {
+    const j = jobMap[app.jobId];
+    if (key === "match") return j ? computeScore(j, app.answers) ?? -1 : -1;
+    if (key === "must") {
+      const ms = j ? mustScore(j, app.answers) : null;
+      if (!ms) return -1;
+      return ms.total ? ms.hit / ms.total : -1;
+    }
+    if (key === "ai") return typeof app.aiScore === "number" ? app.aiScore : -1;
+    return app[key];
+  }
+
   const rows = apps
     .filter((a) => fJob === "All" || String(a.jobId) === fJob)
     .filter((a) => fStat === "All" || a.status === fStat)
@@ -86,8 +98,8 @@ export default function Dashboard({ jobs, setJobs, applicants: initApps, onBack,
       return j?.team === fDept;
     })
     .sort((a, b) => {
-      const av = a[sortK],
-        bv = b[sortK];
+      const av = sortVal(a, sortK),
+        bv = sortVal(b, sortK);
       if (typeof av === "string") return sortD === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
       return sortD === "asc" ? av - bv : bv - av;
     });
@@ -304,10 +316,27 @@ export default function Dashboard({ jobs, setJobs, applicants: initApps, onBack,
         </div>
 
         {/* Applicants */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, gap: 12 }}>
           <div style={{ fontFamily: "'Afacad Flux',sans-serif", fontWeight: 600, fontSize: 19, color: T.white }}>
             Applicants ({rows.length})
           </div>
+          {typeof onRefreshApplicants === "function" && (
+            <button
+              onClick={() => onRefreshApplicants()}
+              style={{
+                background: "transparent",
+                border: `1px solid ${T.border}`,
+                color: T.mutedL,
+                padding: "7px 12px",
+                borderRadius: 10,
+                cursor: "pointer",
+                fontFamily: "'DM Sans',sans-serif",
+                fontSize: 12,
+              }}
+            >
+              Refresh
+            </button>
+          )}
         </div>
 
         {/* Status filters */}
@@ -326,21 +355,9 @@ export default function Dashboard({ jobs, setJobs, applicants: initApps, onBack,
                 <Th k="jobId">Position</Th>
                 <Th k="date">Applied</Th>
                 <Th k="status">Status</Th>
-                <th
-                  style={{
-                    padding: "11px 14px",
-                    fontFamily: "'DM Sans',sans-serif",
-                    fontSize: 10,
-                    color: T.muted,
-                    fontWeight: 500,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.07em",
-                    borderBottom: `1px solid ${T.border}`,
-                    textAlign: "left",
-                  }}
-                >
-                  Match
-                </th>
+                <Th k="match">Match</Th>
+                <Th k="must">Must</Th>
+                <Th k="ai">AI</Th>
                 <th style={{ padding: "11px 14px", borderBottom: `1px solid ${T.border}` }} />
               </tr>
             </thead>
@@ -370,10 +387,27 @@ export default function Dashboard({ jobs, setJobs, applicants: initApps, onBack,
                           {score}%
                         </span>
                       )}
-                      {ms && (
+                    </td>
+                    <td style={{ padding: "13px 14px" }}>
+                      {ms ? (
                         <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: ms.hit === ms.total ? "#50c878" : T.muted }}>
                           {ms.hit}/{ms.total} ✓
                         </span>
+                      ) : (
+                        <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.border }}>—</span>
+                      )}
+                    </td>
+                    <td style={{ padding: "13px 14px" }}>
+                      {a.aiStatus === "done" ? (
+                        typeof a.aiScore === "number" ? (
+                          <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: a.aiScore >= 4 ? "#50c878" : a.aiScore >= 3 ? T.pink : "#ff9944" }}>
+                            {a.aiScore}/5
+                          </span>
+                        ) : (
+                          <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.border }}>—</span>
+                        )
+                      ) : (
+                        <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.muted }}>waiting</span>
                       )}
                     </td>
                     <td style={{ padding: "13px 14px" }} onClick={(e) => e.stopPropagation()}>
@@ -418,7 +452,7 @@ export default function Dashboard({ jobs, setJobs, applicants: initApps, onBack,
                   </div>
                   <StatusBadge status={a.status} colors={STATUS_COLORS} />
                 </div>
-                <div style={{ display: "flex", gap: 10, marginTop: 10, alignItems: "center" }}>
+                <div style={{ display: "flex", gap: 10, marginTop: 10, alignItems: "center", flexWrap: "wrap" }}>
                   {score !== null && (
                     <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: score === 100 ? "#50c878" : score >= 50 ? T.pink : "#ff9944" }}>
                       {score}%
@@ -428,6 +462,15 @@ export default function Dashboard({ jobs, setJobs, applicants: initApps, onBack,
                     <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: ms.hit === ms.total ? "#50c878" : T.muted }}>
                       {ms.hit}/{ms.total} must
                     </span>
+                  )}
+                  {a.aiStatus === "done" ? (
+                    typeof a.aiScore === "number" ? (
+                      <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: a.aiScore >= 4 ? "#50c878" : a.aiScore >= 3 ? T.pink : "#ff9944" }}>
+                        {a.aiScore}/5 AI
+                      </span>
+                    ) : null
+                  ) : (
+                    <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.muted }}>AI waiting</span>
                   )}
                   <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 11, color: T.muted, marginLeft: "auto" }}>{a.date}</span>
                 </div>
