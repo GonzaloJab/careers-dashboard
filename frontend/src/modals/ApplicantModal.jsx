@@ -3,10 +3,11 @@ import { T, STATUS_COLORS } from "../lib/theme";
 import { computeScore, mustScore } from "../lib/scoring";
 import { StatusBadge } from "../ui";
 
-export default function ApplicantModal({ applicant, job, onClose, onStatusChange, authHeader }) {
+export default function ApplicantModal({ applicant, job, onClose, onStatusChange, authHeader, onAIRefresh }) {
   const score = computeScore(job, applicant.answers);
   const ms = mustScore(job, applicant.answers);
   const [rejectSending, setRejectSending] = useState(false);
+  const [aiRefreshing, setAiRefreshing] = useState(false);
   const ai = applicant.aiAssessment || null;
   const defaultRejectMessage = useMemo(() => {
     const name = applicant?.name || "{name}";
@@ -213,6 +214,41 @@ export default function ApplicantModal({ applicant, job, onClose, onStatusChange
           ) : (
             <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.border, marginTop: 8 }}>No assessment output.</div>
           )}
+
+          <div style={{ marginTop: 12, display: "flex", justifyContent: "flex-end" }}>
+            {typeof onAIRefresh === "function" ? (
+              <button
+                disabled={aiRefreshing || applicant.aiStatus === "waiting"}
+                onClick={async () => {
+                  try {
+                    setAiRefreshing(true);
+                    await onAIRefresh(applicant.id);
+                  } catch (e) {
+                    alert("Could not re-run AI assessment.");
+                  } finally {
+                    setAiRefreshing(false);
+                  }
+                }}
+                style={{
+                  background: applicant.aiStatus === "done" ? T.pinkDim : "transparent",
+                  border: `1px solid ${T.border}`,
+                  color: applicant.aiStatus === "done" ? T.pink : T.mutedL,
+                  padding: "8px 12px",
+                  borderRadius: 10,
+                  cursor: aiRefreshing || applicant.aiStatus === "waiting" ? "not-allowed" : "pointer",
+                  fontFamily: "'DM Sans',sans-serif",
+                  fontSize: 12,
+                  fontWeight: 700,
+                }}
+              >
+                {aiRefreshing
+                  ? "Re-running…"
+                  : applicant.aiStatus === "waiting"
+                    ? "AI queued"
+                    : "Re-run AI"}
+              </button>
+            ) : null}
+          </div>
         </div>
 
         <div style={{ marginTop: 22, display: "flex", flexDirection: "column", gap: 14 }}>

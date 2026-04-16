@@ -706,6 +706,50 @@ def update_status(applicant_id: int, body: dict, _=Depends(require_auth)):
 
     return {"ok": True, "mail_sent": mail_sent, "mail_error": mail_error}
 
+@app.post("/applicants/{applicant_id}/ai/refresh")
+async def refresh_ai_for_applicant(
+    applicant_id: int,
+    background_tasks: BackgroundTasks,
+    _=Depends(require_auth),
+):
+    """Recruiter: re-run AI assessment for this applicant (overwrites previous result)."""
+    db = get_db()
+    row = db.execute("SELECT id, job_id, cv_path FROM applicants WHERE id=?", (applicant_id,)).fetchone()
+    db.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Applicant not found")
+
+    job_id = row["job_id"]
+    cv_path = row["cv_path"] or ""
+    if not cv_path:
+        raise HTTPException(status_code=404, detail="CV not found")
+    p = Path(cv_path)
+    if not p.exists():
+        raise HTTPException(status_code=404, detail="CV file not found")
+
+    cv_text = extract_cv_text(p)
+    if not cv_text.strip():
+        db2 = get_db()
+        db2.execute(
+            "UPDATE applicants SET ai_status=?, ai_score=?, ai_assessment=? WHERE id=?",
+            ("no_text", None, None, applicant_id),
+        )
+        db2.commit()
+        db2.close()
+        return {"ok": True, "queued": False, "ai_status": "no_text"}
+
+    # Mark waiting and clear old output, then queue assessment.
+    db3 = get_db()
+    db3.execute(
+        "UPDATE applicants SET ai_status=?, ai_score=?, ai_assessment=? WHERE id=?",
+        ("waiting", None, None, applicant_id),
+    )
+    db3.commit()
+    db3.close()
+
+    background_tasks.add_task(assess_applicant_async, applicant_id, job_id, cv_text)
+    return {"ok": True, "queued": True, "ai_status": "waiting"}
+
 @app.get("/health")
 def health():
     return {"status": "ok"}

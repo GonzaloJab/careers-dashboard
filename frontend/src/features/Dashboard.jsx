@@ -70,6 +70,36 @@ export default function Dashboard({ jobs, setJobs, applicants: initApps, onBack,
     return resp;
   }
 
+  async function refreshApplicantAI(appId) {
+    const resp = await apiJson(`/applicants/${appId}/ai/refresh`, {
+      method: "POST",
+      headers: { Authorization: authHeader },
+    });
+
+    const next = resp?.ai_status || "waiting";
+    setApps((p) =>
+      (p || []).map((a) =>
+        a.id === appId
+          ? {
+              ...a,
+              aiStatus: next,
+              aiScore: null,
+              aiAssessment: null,
+            }
+          : a
+      )
+    );
+    if (selApp?.id === appId) {
+      setSelApp((p) => ({
+        ...p,
+        aiStatus: next,
+        aiScore: null,
+        aiAssessment: null,
+      }));
+    }
+    return resp;
+  }
+
   function rejectApp(appId) {
     changeAppStatus(appId, "rejected");
   }
@@ -148,6 +178,7 @@ export default function Dashboard({ jobs, setJobs, applicants: initApps, onBack,
           onClose={() => setSelApp(null)}
           authHeader={authHeader}
           onStatusChange={changeAppStatus}
+          onAIRefresh={refreshApplicantAI}
         />
       )}
 
