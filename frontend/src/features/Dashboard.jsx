@@ -248,11 +248,7 @@ export default function Dashboard({ jobs, setJobs, applicants: initApps, onBack,
                   <StatusBadge status={j.status} colors={JOB_STATUS_COLORS} />
                 </div>
                 <div style={{ display: "flex", gap: 6, marginTop: 8, alignItems: "center", flexWrap: "wrap" }}>
-                  <Tag small>{j.location}</Tag>
-                  <Tag small accent>
-                    {j.type}
-                  </Tag>
-                  <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 11, color: T.muted }}>
+                  <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 11, color: "#50c878" }}>
                     {appCount(j.id)} applicant{appCount(j.id) !== 1 ? "s" : ""}
                   </span>
                   <button
@@ -262,14 +258,15 @@ export default function Dashboard({ jobs, setJobs, applicants: initApps, onBack,
                     }}
                     style={{
                       marginLeft: "auto",
-                      background: "transparent",
-                      border: `1px solid ${T.border}`,
-                      color: T.muted,
-                      padding: "2px 9px",
-                      borderRadius: 6,
+                      background: T.pinkDim,
+                      border: `1px solid rgba(246,4,183,0.35)`,
+                      color: T.pink,
+                      padding: "6px 12px",
+                      borderRadius: 10,
                       cursor: "pointer",
                       fontFamily: "'DM Sans',sans-serif",
-                      fontSize: 11,
+                      fontSize: 12,
+                      fontWeight: 800,
                     }}
                   >
                     Edit
@@ -408,6 +405,8 @@ export default function Dashboard({ jobs, setJobs, applicants: initApps, onBack,
                         )
                       ) : a.aiStatus === "no_text" ? (
                         <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: "#ff9944" }}>non‑text PDF</span>
+                      ) : a.aiStatus === "failed" ? (
+                        <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: "#ff6060" }}>AI failed</span>
                       ) : (
                         <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.muted }}>waiting</span>
                       )}
@@ -473,6 +472,8 @@ export default function Dashboard({ jobs, setJobs, applicants: initApps, onBack,
                     ) : null
                   ) : a.aiStatus === "no_text" ? (
                     <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: "#ff9944" }}>AI skipped</span>
+                  ) : a.aiStatus === "failed" ? (
+                    <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: "#ff6060" }}>AI failed</span>
                   ) : (
                     <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.muted }}>AI waiting</span>
                   )}

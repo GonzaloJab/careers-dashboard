@@ -339,6 +339,11 @@ async def assess_applicant_async(applicant_id: int, job_id: int, cv_text: str):
         ai_req = job.get("ai_requirements") or ""
         db.close()
 
+        print(
+            f"[AI] Starting assessment applicant_id={applicant_id} job_id={job_id} "
+            f"cv_chars={len(cv_text)} ai_req_chars={len(ai_req)} model={OPENROUTER_MODEL}"
+        )
+
         prompt = _build_ai_prompt(job, ai_req, cv_text)
 
         client = _openrouter_client()
@@ -352,6 +357,7 @@ async def assess_applicant_async(applicant_id: int, job_id: int, cv_text: str):
             max_tokens=700,
         )
         content = (resp.choices[0].message.content or "").strip()
+        print(f"[AI] Raw response received applicant_id={applicant_id} chars={len(content)}")
         parsed = json.loads(content)
 
         score = parsed.get("score")
@@ -361,6 +367,8 @@ async def assess_applicant_async(applicant_id: int, job_id: int, cv_text: str):
             score = int(score)
         if score is not None and (score < 0 or score > 5):
             score = None
+
+        print(f"[AI] Parsed JSON applicant_id={applicant_id} score={score}")
 
         db2 = get_db()
         db2.execute(
@@ -373,7 +381,10 @@ async def assess_applicant_async(applicant_id: int, job_id: int, cv_text: str):
         print(f"AI assessment error for applicant {applicant_id}: {e}")
         try:
             db3 = get_db()
-            db3.execute("UPDATE applicants SET ai_status=? WHERE id=?", ("waiting", applicant_id))
+            db3.execute(
+                "UPDATE applicants SET ai_status=?, ai_score=?, ai_assessment=? WHERE id=?",
+                ("failed", None, None, applicant_id),
+            )
             db3.commit()
             db3.close()
         except Exception:
