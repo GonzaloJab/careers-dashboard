@@ -1,7 +1,19 @@
 import { T } from "../lib/theme";
-import { Tag } from "../ui";
 
 export default function JobCard({ job, onClick }) {
+  const pill = (accent) => ({
+    display: "inline-block",
+    padding: "clamp(3px,0.45vw,6px) clamp(10px,1.0vw,14px)",
+    borderRadius: 999,
+    fontSize: "clamp(11px,0.95vw,14px)",
+    fontFamily: "'DM Sans',sans-serif",
+    fontWeight: 600,
+    letterSpacing: "0.02em",
+    background: accent ? T.pink : "rgba(255,255,255,0.06)",
+    color: accent ? T.white : T.mutedL,
+    border: accent ? "none" : `1px solid ${T.border}`,
+    whiteSpace: "nowrap",
+  });
   return (
     <div
       className="job-card"
@@ -49,12 +61,10 @@ export default function JobCard({ job, onClick }) {
             {job.team}
           </div>
         </div>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          <Tag small>{job.location}</Tag>
-          <Tag small>{job.remote}</Tag>
-          <Tag small accent>
-            {job.type}
-          </Tag>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <span style={pill(false)}>{job.location}</span>
+          <span style={pill(false)}>{job.remote}</span>
+          <span style={pill(true)}>{job.type}</span>
         </div>
       </div>
       <p

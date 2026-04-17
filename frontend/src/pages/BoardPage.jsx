@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiJson } from "../lib/api";
 import { computeScore } from "../lib/scoring";
 import { T } from "../lib/theme";
-import { INIT_JOBS, LOCS, SENS, TEAMS } from "../data/staticData";
+import { INIT_JOBS } from "../data/staticData";
 import DropFilter from "../components/DropFilter";
 import JobCard from "../components/JobCard";
 import Nav from "../components/Nav";
@@ -47,6 +47,18 @@ export default function BoardPage() {
   }
 
   const openJobs = jobs.filter((j) => j.status === "open");
+
+  const teamOpts = useMemo(() => Array.from(new Set(openJobs.map((j) => j.team).filter(Boolean))).sort(), [openJobs]);
+  const locOpts = useMemo(() => Array.from(new Set(openJobs.map((j) => j.location).filter(Boolean))).sort(), [openJobs]);
+  const senOpts = useMemo(() => Array.from(new Set(openJobs.map((j) => j.seniority).filter(Boolean))).sort(), [openJobs]);
+
+  useEffect(() => {
+    // If the dataset changes (API), keep filters valid.
+    if (deptF !== "All" && !teamOpts.includes(deptF)) setDeptF("All");
+    if (locF !== "All" && !locOpts.includes(locF)) setLocF("All");
+    if (senF !== "All" && !senOpts.includes(senF)) setSenF("All");
+  }, [teamOpts, locOpts, senOpts, deptF, locF, senF]);
+
   const filtered = openJobs.filter(
     (j) =>
       (deptF === "All" || j.team === deptF) &&
@@ -99,20 +111,22 @@ export default function BoardPage() {
       </div>
 
       {/* Filters (dropdown style) */}
-      <div
-        className="filters-row page-wrap"
-        style={{
-          padding: "0 24px 20px",
-          opacity: mounted ? 1 : 0,
-          transition: "opacity 0.5s 0.15s",
-          display: "flex",
-          gap: 8,
-          flexWrap: "wrap",
-        }}
-      >
-        <DropFilter label="Department" options={TEAMS} value={deptF} onChange={setDeptF} />
-        <DropFilter label="Location" options={LOCS} value={locF} onChange={setLocF} />
-        <DropFilter label="Level" options={SENS} value={senF} onChange={setSenF} />
+      <div className="page-wrap" style={{ padding: "0 24px 20px", opacity: mounted ? 1 : 0, transition: "opacity 0.5s 0.15s" }}>
+        <div style={{ fontFamily: "'Afacad Flux',sans-serif", fontWeight: 700, color: T.white, fontSize: 16, marginBottom: 10 }}>
+          Open positions:
+        </div>
+        <div
+          className="filters-row"
+          style={{
+            display: "flex",
+            gap: 8,
+            flexWrap: "wrap",
+          }}
+        >
+          <DropFilter label="Department" options={teamOpts} value={deptF} onChange={setDeptF} />
+          <DropFilter label="Location" options={locOpts} value={locF} onChange={setLocF} />
+          <DropFilter label="Level" options={senOpts} value={senF} onChange={setSenF} />
+        </div>
       </div>
 
       {/* Job list */}
@@ -138,6 +152,7 @@ export default function BoardPage() {
             <Link
               key={j.public_id || j.id}
               to={`/jobs/${j.public_id || j.id}`}
+              state={{ fromBoard: true }}
               style={{ display: "block", textDecoration: "none", color: "inherit" }}
             >
               <JobCard job={j} />

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { apiJson } from "../lib/api";
 import { T } from "../lib/theme";
 import { INIT_JOBS } from "../data/staticData";
@@ -10,6 +10,7 @@ import ApplyInlineForm from "../components/ApplyInlineForm";
 export default function JobPage() {
   const { publicId } = useParams();
   const nav = useNavigate();
+  const loc = useLocation();
   const idNum = Number(publicId);
 
   const [jobs, setJobs] = useState([]);
@@ -64,7 +65,7 @@ export default function JobPage() {
           maxWidth: 1100,
           margin: "0 auto",
           padding: "clamp(26px,5vw,52px) 24px",
-          animation: "fadeUp 0.4s cubic-bezier(0.22,1,0.36,1)",
+          animation: loc?.state?.fromBoard ? "slideInLeft 0.38s cubic-bezier(0.22,1,0.36,1)" : "fadeUp 0.4s cubic-bezier(0.22,1,0.36,1)",
         }}
       >
         <div style={{ display: "flex", gap: 24, alignItems: "flex-start" }}>
