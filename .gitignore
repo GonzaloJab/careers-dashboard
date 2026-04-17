@@ -25,3 +25,6 @@ CLAUDE_CODE_CONTEXT.md
 
 # Local scripts
 scripts/
+test_files/
+# Local debug artifacts
+tmp_ai_debug/
