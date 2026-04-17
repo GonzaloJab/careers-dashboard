@@ -24,6 +24,7 @@ jobs:
           command_timeout: 30m
           script: |
             set -euo pipefail
+            export DEPLOY_ENV_B64='${{ secrets.CAREERS_ENV_B64 }}'
             cd /opt/careers
             bash ./scripts/deploy_on_server.sh
 

@@ -24,6 +24,13 @@ rollback() {
 
 trap rollback ERR
 
+if [[ -n "${DEPLOY_ENV_B64:-}" ]]; then
+  echo "Writing /opt/careers/.env from DEPLOY_ENV_B64..."
+  umask 077
+  echo "$DEPLOY_ENV_B64" | base64 -d > "$APP_DIR/.env"
+  chmod 600 "$APP_DIR/.env" || true
+fi
+
 echo "Fetching ${REMOTE}/${BRANCH}..."
 git fetch "$REMOTE" "$BRANCH" --prune
 
