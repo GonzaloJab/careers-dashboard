@@ -56,6 +56,7 @@ export const COPY = {
       emailInvalid: "Please enter a valid email address.",
       linkInvalid: "Please enter a valid URL (including https://).",
       consentRequired: "Consent is required to submit your application.",
+      alreadyApplied: "It looks like you already applied for this position with this email address.",
       submitFailed: "Couldn’t submit right now. Please try again.",
     },
 

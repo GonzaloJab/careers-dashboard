@@ -79,8 +79,8 @@ export default function ApplyInlineForm({ job, open, onSubmitted }) {
         cvFile: file,
       });
       onSubmitted?.();
-    } catch {
-      setErr(COPY.apply.validation.submitFailed);
+    } catch (e) {
+      setErr(e?.status === 409 ? COPY.apply.validation.alreadyApplied : COPY.apply.validation.submitFailed);
     } finally {
       setSubmitting(false);
     }

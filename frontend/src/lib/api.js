@@ -54,6 +54,11 @@ export async function applyForJob(
   fd.append("cv", cvFile);
 
   const res = await fetch(`${API_BASE}/apply`, { method: "POST", body: fd });
-  if (!res.ok) throw new Error("apply_failed");
+  if (!res.ok) {
+    const msg = await res.text().catch(() => "");
+    const err = new Error(msg || `HTTP ${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
 }
 
