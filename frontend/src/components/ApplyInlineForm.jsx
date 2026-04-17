@@ -27,11 +27,13 @@ export default function ApplyInlineForm({ job, open, onSubmitted }) {
     });
   }
 
-  const allAnswered = job.questions.every((q) => {
-    const a = answers[q.id];
-    if (q.type === "multicheck") return (a || []).length > 0;
-    return !!a;
-  });
+  const allAnswered = job.questions
+    .filter((q) => q.isMust)
+    .every((q) => {
+      const a = answers[q.id];
+      if (q.type === "multicheck") return (a || []).length > 0;
+      return !!a;
+    });
 
   function isValidEmail(v) {
     const s = (v || "").trim();
@@ -129,7 +131,7 @@ export default function ApplyInlineForm({ job, open, onSubmitted }) {
         {job.questions.map((q) => (
           <div key={q.id}>
             <label style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 13, color: T.mutedL, display: "block", marginBottom: 8 }}>
-              {q.label} {q.isMust && <span style={{ color: T.pink, fontSize: 11 }}>(required)</span>}
+              {q.label} {q.isMust && <span style={{ color: T.pink, fontSize: 11 }}>*</span>}
             </label>
             {q.type === "select" && (
               <select
@@ -245,6 +247,9 @@ export default function ApplyInlineForm({ job, open, onSubmitted }) {
         </div>
 
         <div style={{ marginTop: 2 }}>
+          <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.mutedL, marginBottom: 8 }}>
+            Consent <span style={{ color: T.pink, fontSize: 11 }}>*</span>
+          </div>
           <label style={{ display: "flex", gap: 10, alignItems: "flex-start", cursor: "pointer" }}>
             <input
               type="checkbox"
