@@ -18,6 +18,7 @@ export default function Dashboard({ jobs, setJobs, applicants: initApps, onBack,
   const [showAdd, setShowAdd] = useState(false);
   const [editJob, setEditJob] = useState(null);
   const [selApp, setSelApp] = useState(null);
+  const [busy, setBusy] = useState({});
 
   useEffect(() => {
     setApps(initApps || []);
@@ -101,20 +102,51 @@ export default function Dashboard({ jobs, setJobs, applicants: initApps, onBack,
   }
 
   async function contactApplicant(appId) {
-    const resp = await apiJson(`/applicants/${appId}/contact`, {
-      method: "POST",
-      headers: { Authorization: authHeader },
-    });
-    setApps((p) => p.map((a) => (a.id === appId ? { ...a, status: "contacted" } : a)));
-    if (selApp?.id === appId) setSelApp((p) => ({ ...p, status: "contacted" }));
-    if (resp?.mail_sent === false) {
-      alert(`Contact email failed: ${resp?.mail_error || "unknown error"}`);
+    setBusy((p) => ({ ...(p || {}), [appId]: "contact" }));
+    try {
+      const resp = await apiJson(`/applicants/${appId}/contact`, {
+        method: "POST",
+        headers: { Authorization: authHeader },
+      });
+      setApps((p) => p.map((a) => (a.id === appId ? { ...a, status: "contacted" } : a)));
+      if (selApp?.id === appId) setSelApp((p) => ({ ...p, status: "contacted" }));
+      if (resp?.mail_sent === false) {
+        alert(`Contact email failed: ${resp?.mail_error || "unknown error"}`);
+      }
+      return resp;
+    } finally {
+      setBusy((p) => {
+        const next = { ...(p || {}) };
+        if (next[appId] === "contact") delete next[appId];
+        return next;
+      });
     }
-    return resp;
   }
 
   function rejectApp(appId) {
-    changeAppStatus(appId, "rejected");
+    return changeAppStatus(appId, "rejected");
+  }
+
+  async function deleteApplicant(appId) {
+    setBusy((p) => ({ ...(p || {}), [appId]: "delete" }));
+    try {
+      const resp = await apiJson(`/applicants/${appId}`, {
+        method: "DELETE",
+        headers: { Authorization: authHeader },
+      });
+      setApps((p) => (p || []).filter((a) => a.id !== appId));
+      if (selApp?.id === appId) setSelApp(null);
+      if (resp?.cv_delete_error) {
+        alert(`Applicant deleted, but CV file could not be deleted: ${resp.cv_delete_error}`);
+      }
+      return resp;
+    } finally {
+      setBusy((p) => {
+        const next = { ...(p || {}) };
+        if (next[appId] === "delete") delete next[appId];
+        return next;
+      });
+    }
   }
 
   const jobMap = Object.fromEntries(jobs.map((j) => [j.id, j]));
@@ -459,6 +491,8 @@ export default function Dashboard({ jobs, setJobs, applicants: initApps, onBack,
                       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                         {a.status !== "rejected" && (
                           <button
+                            className="action-btn"
+                            disabled={busy?.[a.id] != null}
                             onClick={() => contactApplicant(a.id)}
                             style={{
                               padding: "4px 10px",
@@ -472,12 +506,25 @@ export default function Dashboard({ jobs, setJobs, applicants: initApps, onBack,
                               whiteSpace: "nowrap",
                             }}
                           >
-                            Contact
+                            {busy?.[a.id] === "contact" ? "Contacting…" : "Contact"}
                           </button>
                         )}
                         {a.status !== "rejected" && (
                           <button
-                            onClick={() => rejectApp(a.id)}
+                            className="action-btn"
+                            disabled={busy?.[a.id] != null}
+                            onClick={async () => {
+                              try {
+                                setBusy((p) => ({ ...(p || {}), [a.id]: "reject" }));
+                                await rejectApp(a.id);
+                              } finally {
+                                setBusy((p) => {
+                                  const next = { ...(p || {}) };
+                                  if (next[a.id] === "reject") delete next[a.id];
+                                  return next;
+                                });
+                              }
+                            }}
                             style={{
                               padding: "4px 10px",
                               borderRadius: 7,
@@ -490,9 +537,40 @@ export default function Dashboard({ jobs, setJobs, applicants: initApps, onBack,
                               whiteSpace: "nowrap",
                             }}
                           >
-                            Reject
+                            {busy?.[a.id] === "reject" ? "Rejecting…" : "Reject"}
                           </button>
                         )}
+                        <button
+                          className="action-btn"
+                          disabled={busy?.[a.id] != null}
+                          onClick={async () => {
+                            if (!window.confirm("Delete this application permanently?")) return;
+                            try {
+                              await deleteApplicant(a.id);
+                            } catch {
+                              alert("Could not delete application (service may be down).");
+                            }
+                          }}
+                          title="Delete application"
+                          aria-label="Delete application"
+                          style={{
+                            padding: "4px 10px",
+                            borderRadius: 7,
+                            border: `1px solid rgba(255,100,100,0.35)`,
+                            background: "rgba(255,100,100,0.06)",
+                            color: "#ff6060",
+                            cursor: "pointer",
+                            fontFamily: "'DM Sans',sans-serif",
+                            fontSize: 11,
+                            whiteSpace: "nowrap",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 6,
+                          }}
+                        >
+                          <span aria-hidden="true">🗑</span>
+                          {busy?.[a.id] === "delete" ? "Deleting…" : "Delete"}
+                        </button>
                       </div>
                     </td>
                   </tr>

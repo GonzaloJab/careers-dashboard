@@ -796,6 +796,41 @@ def contact_applicant(applicant_id: int, _=Depends(require_auth)):
 
     return {"ok": True, "mail_sent": mail_sent, "mail_error": mail_error, "status": "contacted"}
 
+
+@app.delete("/applicants/{applicant_id}")
+def delete_applicant(applicant_id: int, _=Depends(require_auth)):
+    """Recruiter: permanently delete an application (and best-effort delete its stored CV file)."""
+    db = get_db()
+    row = db.execute("SELECT cv_path FROM applicants WHERE id=?", (applicant_id,)).fetchone()
+    if not row:
+        db.close()
+        raise HTTPException(status_code=404, detail="Applicant not found")
+
+    cv_path = (row["cv_path"] or "").strip()
+    db.execute("DELETE FROM applicants WHERE id=?", (applicant_id,))
+    db.commit()
+    db.close()
+
+    cv_deleted = False
+    cv_delete_error = None
+    if cv_path:
+        try:
+            p = Path(cv_path)
+            if p.exists() and p.is_file():
+                p.unlink()
+                cv_deleted = True
+                # Best-effort cleanup of empty job folder.
+                try:
+                    parent = p.parent
+                    if parent.exists() and parent.is_dir() and not any(parent.iterdir()):
+                        parent.rmdir()
+                except Exception:
+                    pass
+        except Exception as e:
+            cv_delete_error = str(e)
+
+    return {"ok": True, "cv_deleted": cv_deleted, "cv_delete_error": cv_delete_error}
+
 @app.post("/applicants/{applicant_id}/ai/refresh")
 async def refresh_ai_for_applicant(
     applicant_id: int,

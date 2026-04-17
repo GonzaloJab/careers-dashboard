@@ -35,6 +35,14 @@ input, select, textarea, button { font-family: inherit; }
 .btn-pink:hover:not(:disabled) { opacity:0.88; }
 .btn-pink:active:not(:disabled) { transform:scale(0.98); }
 
+/* Recruiter table row action buttons (Contact / Reject / Delete) */
+.action-btn {
+  transition: transform 0.06s ease, opacity 0.12s ease, filter 0.12s ease;
+  user-select: none;
+}
+.action-btn:active:not(:disabled) { transform: scale(0.97); filter: brightness(1.06); }
+.action-btn:disabled { opacity: 0.55; cursor: not-allowed !important; }
+
 @media (max-width:640px) {
   .desktop-only { display:none !important; }
   .nav-links { display:none !important; }
