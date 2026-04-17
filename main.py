@@ -332,13 +332,32 @@ def require_auth(creds: HTTPBasicCredentials = Depends(security)):
 @app.get("/settings")
 def get_settings(_=Depends(require_auth)):
     """
-    Recruiter: fetch current settings (DB overrides).
-    Values are returned as-is because only authenticated recruiters can access this endpoint.
+    Recruiter: fetch current settings.
+    Returns the effective config (DB override if present, otherwise env fallback) plus current DB overrides.
     """
+    keys = [
+        # OpenRouter
+        "OPENROUTER_API_KEY",
+        "OPENROUTER_MODEL",
+        "OPENROUTER_BASE_URL",
+        # Meeting link
+        "CONTACT_BOOKING_URL",
+        "BOOKING_MEETING_LINK",
+        "TEAMS_BOOKING_LINK",
+        # Microsoft Graph
+        "MS_TENANT_ID",
+        "MS_CLIENT_ID",
+        "MS_CLIENT_SECRET",
+        "MS_MAIL_SENDER",
+    ]
+    effective = {k: get_config(k, "") for k in keys}
+
     db = get_db()
     rows = db.execute("SELECT key, value FROM settings").fetchall()
     db.close()
-    return {r["key"]: r["value"] for r in rows}
+    overrides = {r["key"]: r["value"] for r in rows}
+
+    return {"effective": effective, "overrides": overrides}
 
 
 @app.put("/settings")
@@ -352,7 +371,6 @@ def put_settings(body: dict, _=Depends(require_auth)):
         "MS_CLIENT_ID",
         "MS_CLIENT_SECRET",
         "MS_MAIL_SENDER",
-        "OPENROUTER_API_KEY",
         "OPENROUTER_MODEL",
         "OPENROUTER_BASE_URL",
         "CONTACT_BOOKING_URL",

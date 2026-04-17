@@ -241,7 +241,11 @@ export default function Dashboard({ jobs, setJobs, applicants: initApps, onBack,
           justifyContent: "space-between",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <Logo height={72} />
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <span className="desktop-only" style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.muted }}>
+            Recruiter dashboard
+          </span>
           <button
             className="action-btn"
             onClick={() => setShowSettings(true)}
@@ -264,12 +268,6 @@ export default function Dashboard({ jobs, setJobs, applicants: initApps, onBack,
           >
             ⚙
           </button>
-          <Logo height={72} />
-        </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <span className="desktop-only" style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.muted }}>
-            Recruiter dashboard
-          </span>
           <button
             onClick={onBack}
             style={{

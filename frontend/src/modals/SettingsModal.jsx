@@ -3,21 +3,14 @@ import { apiJson } from "../lib/api";
 import { T } from "../lib/theme";
 import Input from "../ui/Input";
 
-const FIELD_ORDER = [
-  { k: "OPENROUTER_API_KEY", label: "OpenRouter API key", secret: true, help: "Create in OpenRouter → Keys. Stored in DB (recruiter-only)." },
-  { k: "OPENROUTER_MODEL", label: "OpenRouter model", secret: false, help: "Example: gpt-4o-mini" },
-  { k: "OPENROUTER_BASE_URL", label: "OpenRouter base URL", secret: false, help: "Default: https://openrouter.ai/api/v1" },
-  { k: "CONTACT_BOOKING_URL", label: "Meeting link (Teams booking)", secret: false, help: "Public booking URL included in the Contact email." },
-  { k: "MS_TENANT_ID", label: "Microsoft tenant ID", secret: false, help: "Azure tenant GUID." },
-  { k: "MS_CLIENT_ID", label: "Microsoft client ID", secret: false, help: "App registration (client) ID." },
-  { k: "MS_CLIENT_SECRET", label: "Microsoft client secret", secret: true, help: "Create a secret in Azure App Registration → Certificates & secrets." },
-  { k: "MS_MAIL_SENDER", label: "Microsoft sender mailbox (UPN)", secret: false, help: "Example: recruiter@laminarpay.com" },
-];
+const WARN =
+  "Before changing these settings, check with Gonzalo Jabat. Changes can impact email delivery, AI assessment, cost, and overall performance.";
 
 export default function SettingsModal({ authHeader, onClose }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [values, setValues] = useState({});
+  const [values, setValues] = useState({}); // overrides we will PUT
+  const [effective, setEffective] = useState({}); // env/db effective display
   const [err, setErr] = useState("");
 
   const azureLinks = useMemo(
@@ -37,7 +30,8 @@ export default function SettingsModal({ authHeader, onClose }) {
         setLoading(true);
         const data = await apiJson("/settings", { headers: { Authorization: authHeader } });
         if (!mounted) return;
-        setValues(data || {});
+        setEffective(data?.effective || {});
+        setValues(data?.overrides || {});
       } catch {
         if (!mounted) return;
         setErr("Could not load settings (service may be down).");
@@ -54,6 +48,9 @@ export default function SettingsModal({ authHeader, onClose }) {
     setErr("");
     setSaving(true);
     try {
+      if (!window.confirm(WARN + "\n\nDo you want to save these changes?")) {
+        return;
+      }
       await apiJson("/settings", {
         method: "PUT",
         headers: { Authorization: authHeader },
@@ -107,60 +104,99 @@ export default function SettingsModal({ authHeader, onClose }) {
           </button>
         </div>
 
-        <div style={{ marginTop: 10, fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.mutedL, lineHeight: 1.6 }}>
-          These values override server `.env`. They are stored in the database and used by the backend immediately.
-        </div>
-
-        <div style={{ marginTop: 14, background: "#171717", border: `1px solid ${T.border}`, borderRadius: 12, padding: "12px 14px" }}>
-          <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.mutedL, lineHeight: 1.6 }}>
-            <div style={{ fontWeight: 800, color: T.white, marginBottom: 6 }}>Microsoft Graph (mail)</div>
-            <div>
-              - Azure Portal:{" "}
-              <a href={azureLinks.portal} target="_blank" rel="noreferrer" style={{ color: T.pink, textDecoration: "none" }}>
-                open
-              </a>
-            </div>
-            <div>
-              - App registrations:{" "}
-              <a href={azureLinks.appReg} target="_blank" rel="noreferrer" style={{ color: T.pink, textDecoration: "none" }}>
-                list
-              </a>
-            </div>
-            <div>
-              - Service auth doc:{" "}
-              <a href={azureLinks.graphPerms} target="_blank" rel="noreferrer" style={{ color: T.pink, textDecoration: "none" }}>
-                Microsoft Learn
-              </a>
-            </div>
-            <div style={{ marginTop: 8, fontWeight: 800, color: T.white }}>Teams booking link</div>
-            <div>
-              - Bookings overview:{" "}
-              <a href={azureLinks.bookings} target="_blank" rel="noreferrer" style={{ color: T.pink, textDecoration: "none" }}>
-                Microsoft Learn
-              </a>
-            </div>
+        <div style={{ marginTop: 10, background: "rgba(246,4,183,0.06)", border: `1px solid rgba(246,4,183,0.18)`, borderRadius: 12, padding: "10px 12px" }}>
+          <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.mutedL, lineHeight: 1.6, fontWeight: 700 }}>
+            {WARN}
           </div>
         </div>
 
-        <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 14 }}>
           {loading ? (
             <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.muted }}>Loading…</div>
           ) : (
-            FIELD_ORDER.map((f) => (
-              <div key={f.k}>
+            <>
+              {/* OpenRouter */}
+              <div style={{ background: "#171717", border: `1px solid ${T.border}`, borderRadius: 12, padding: "12px 14px" }}>
+                <div style={{ fontFamily: "'Afacad Flux',sans-serif", fontWeight: 800, fontSize: 14, color: T.white, marginBottom: 6 }}>OpenRouter</div>
+                <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.muted, marginBottom: 10 }}>
+                  Model is used for AI assessment. Key is shown for visibility but is not editable here.
+                </div>
+
+                <Input label="OpenRouter API key (read-only)" value={effective?.OPENROUTER_API_KEY || ""} onChange={() => {}} />
+                <div style={{ height: 10 }} />
                 <Input
-                  label={f.label}
-                  value={values?.[f.k] || ""}
-                  onChange={(e) => setValues((p) => ({ ...(p || {}), [f.k]: e.target.value }))}
-                  placeholder={f.secret ? "••••••••" : ""}
+                  label="OpenRouter model"
+                  value={values?.OPENROUTER_MODEL ?? effective?.OPENROUTER_MODEL ?? ""}
+                  onChange={(e) => setValues((p) => ({ ...(p || {}), OPENROUTER_MODEL: e.target.value }))}
+                  placeholder="gpt-4o-mini"
                 />
-                {f.help ? (
-                  <div style={{ marginTop: 6, fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.muted }}>
-                    {f.help}
-                  </div>
-                ) : null}
+                <div style={{ height: 10 }} />
+                <Input
+                  label="OpenRouter base URL"
+                  value={values?.OPENROUTER_BASE_URL ?? effective?.OPENROUTER_BASE_URL ?? ""}
+                  onChange={(e) => setValues((p) => ({ ...(p || {}), OPENROUTER_BASE_URL: e.target.value }))}
+                  placeholder="https://openrouter.ai/api/v1"
+                />
               </div>
-            ))
+
+              {/* Meeting link */}
+              <div style={{ background: "#171717", border: `1px solid ${T.border}`, borderRadius: 12, padding: "12px 14px" }}>
+                <div style={{ fontFamily: "'Afacad Flux',sans-serif", fontWeight: 800, fontSize: 14, color: T.white, marginBottom: 6 }}>Meeting link</div>
+                <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.muted, marginBottom: 10 }}>
+                  Use a Microsoft Bookings (Teams) public link. Docs:{" "}
+                  <a href={azureLinks.bookings} target="_blank" rel="noreferrer" style={{ color: T.pink, textDecoration: "none" }}>
+                    Microsoft Learn
+                  </a>
+                </div>
+                <Input
+                  label="CONTACT_BOOKING_URL"
+                  value={values?.CONTACT_BOOKING_URL ?? effective?.CONTACT_BOOKING_URL ?? ""}
+                  onChange={(e) => setValues((p) => ({ ...(p || {}), CONTACT_BOOKING_URL: e.target.value }))}
+                />
+                <div style={{ marginTop: 8, fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.muted }}>
+                  Current env fallbacks: BOOKING_MEETING_LINK={effective?.BOOKING_MEETING_LINK || ""} · TEAMS_BOOKING_LINK={effective?.TEAMS_BOOKING_LINK || ""}
+                </div>
+              </div>
+
+              {/* Microsoft Mail */}
+              <div style={{ background: "#171717", border: `1px solid ${T.border}`, borderRadius: 12, padding: "12px 14px" }}>
+                <div style={{ fontFamily: "'Afacad Flux',sans-serif", fontWeight: 800, fontSize: 14, color: T.white, marginBottom: 6 }}>Microsoft mail (Graph)</div>
+                <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.muted, marginBottom: 10 }}>
+                  Configure in Azure App Registrations:{" "}
+                  <a href={azureLinks.appReg} target="_blank" rel="noreferrer" style={{ color: T.pink, textDecoration: "none" }}>
+                    open
+                  </a>{" "}
+                  · Auth doc:{" "}
+                  <a href={azureLinks.graphPerms} target="_blank" rel="noreferrer" style={{ color: T.pink, textDecoration: "none" }}>
+                    Microsoft Learn
+                  </a>
+                </div>
+
+                <Input
+                  label="MS_TENANT_ID"
+                  value={values?.MS_TENANT_ID ?? effective?.MS_TENANT_ID ?? ""}
+                  onChange={(e) => setValues((p) => ({ ...(p || {}), MS_TENANT_ID: e.target.value }))}
+                />
+                <div style={{ height: 10 }} />
+                <Input
+                  label="MS_CLIENT_ID"
+                  value={values?.MS_CLIENT_ID ?? effective?.MS_CLIENT_ID ?? ""}
+                  onChange={(e) => setValues((p) => ({ ...(p || {}), MS_CLIENT_ID: e.target.value }))}
+                />
+                <div style={{ height: 10 }} />
+                <Input
+                  label="MS_CLIENT_SECRET"
+                  value={values?.MS_CLIENT_SECRET ?? effective?.MS_CLIENT_SECRET ?? ""}
+                  onChange={(e) => setValues((p) => ({ ...(p || {}), MS_CLIENT_SECRET: e.target.value }))}
+                />
+                <div style={{ height: 10 }} />
+                <Input
+                  label="MS_MAIL_SENDER"
+                  value={values?.MS_MAIL_SENDER ?? effective?.MS_MAIL_SENDER ?? ""}
+                  onChange={(e) => setValues((p) => ({ ...(p || {}), MS_MAIL_SENDER: e.target.value }))}
+                />
+              </div>
+            </>
           )}
 
           {err ? <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: "#ff6060" }}>{err}</div> : null}
