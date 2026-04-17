@@ -8,6 +8,7 @@ import DropFilter from "../components/DropFilter";
 import JobCard from "../components/JobCard";
 import Nav from "../components/Nav";
 import Logo from "../components/Logo";
+import { COPY } from "../content/copy";
 
 export default function BoardPage() {
   const [jobs, setJobs] = useState([]);
@@ -91,9 +92,9 @@ export default function BoardPage() {
             color: T.white,
           }}
         >
-          Shape the future
+          {COPY.board.heroTitleTop}
           <br />
-          <span style={{ color: T.pink }}>of financial infrastructure.</span>
+          <span style={{ color: T.pink }}>{COPY.board.heroTitleEmphasis}</span>
         </h1>
         <p
           style={{
@@ -106,14 +107,14 @@ export default function BoardPage() {
             margin: 0,
           }}
         >
-          Boutique fintech consultancy at the intersection of data, distributed ledger technology, and payments.
+          {COPY.board.heroSubtitle}
         </p>
       </div>
 
       {/* Filters (dropdown style) */}
       <div className="page-wrap" style={{ padding: "0 24px 20px", opacity: mounted ? 1 : 0, transition: "opacity 0.5s 0.15s" }}>
         <div style={{ fontFamily: "'Afacad Flux',sans-serif", fontWeight: 700, color: T.white, fontSize: 16, marginBottom: 10 }}>
-          Open positions:
+          {COPY.board.openPositionsLabel}
         </div>
         <div
           className="filters-row"
@@ -145,7 +146,7 @@ export default function BoardPage() {
       >
         {filtered.length === 0 ? (
           <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 14, color: T.muted, padding: "32px 0" }}>
-            No positions match the selected filters.
+            {COPY.board.noMatches}
           </div>
         ) : (
           filtered.map((j) => (
@@ -176,7 +177,7 @@ export default function BoardPage() {
         }}
       >
         <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 11, color: T.border }}>
-          © 2025 Laminar · All rights reserved
+          {COPY.board.footer}
         </span>
       </div>
     </div>

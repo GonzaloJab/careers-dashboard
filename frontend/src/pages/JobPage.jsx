@@ -6,6 +6,7 @@ import { INIT_JOBS } from "../data/staticData";
 import Nav from "../components/Nav";
 import { ButtonPink, Tag } from "../ui";
 import ApplyInlineForm from "../components/ApplyInlineForm";
+import { COPY } from "../content/copy";
 
 export default function JobPage() {
   const { publicId } = useParams();
@@ -47,7 +48,7 @@ export default function JobPage() {
           </div>
           <div style={{ marginTop: 10 }}>
             <Link to="/" style={{ color: T.pink, fontFamily: "'DM Sans',sans-serif", textDecoration: "none" }}>
-              Back to jobs
+              {COPY.job.backToJobs}
             </Link>
           </div>
         </div>
@@ -80,7 +81,7 @@ export default function JobPage() {
                 marginBottom: 16,
               }}
             >
-              Open position
+              {COPY.job.openPositionKicker}
             </div>
             <h1
               style={{
@@ -110,7 +111,7 @@ export default function JobPage() {
 
             <div className={`job-actions ${applyOpen ? "apply-open" : ""}`} style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
               {!applyOpen && !submitted && (
-                <ButtonPink onClick={() => setApplyOpen(true)}>Apply for this position</ButtonPink>
+                <ButtonPink onClick={() => setApplyOpen(true)}>{COPY.job.applyCta}</ButtonPink>
               )}
               <button
                 className="job-back-btn"
@@ -130,7 +131,7 @@ export default function JobPage() {
                   transition: "transform 260ms cubic-bezier(0.22,1,0.36,1)",
                 }}
               >
-                ← Back
+                {COPY.job.backButton}
               </button>
             </div>
 
@@ -138,8 +139,7 @@ export default function JobPage() {
               {submitted ? (
                 <div
                   style={{
-                    maxWidth: 720,
-                    margin: "0 auto",
+                    width: "100%",
                     background: "rgba(246,4,183,0.05)",
                     border: "1px solid rgba(246,4,183,0.18)",
                     borderRadius: 14,
@@ -148,10 +148,10 @@ export default function JobPage() {
                   }}
                 >
                   <div style={{ fontFamily: "'Afacad Flux',sans-serif", fontWeight: 800, fontSize: 20, color: T.white }}>
-                    Application received
+                    {COPY.job.receivedTitle}
                   </div>
                   <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 14, color: T.mutedL, marginTop: 8, lineHeight: 1.7 }}>
-                    Thank you for applying. We’ll be in contact soon.
+                    {COPY.job.receivedBody}
                   </div>
                 </div>
               ) : (

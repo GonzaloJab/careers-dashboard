@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { applyForJob } from "../lib/api";
 import { T } from "../lib/theme";
 import { ButtonPink, Input } from "../ui";
+import { COPY } from "../content/copy";
 
 export default function ApplyInlineForm({ job, open, onSubmitted }) {
   const [firstName, setFirstName] = useState("");
@@ -10,8 +11,10 @@ export default function ApplyInlineForm({ job, open, onSubmitted }) {
   const [answers, setAnswers] = useState({});
   const [linkedin, setLinkedin] = useState("");
   const [file, setFile] = useState(null);
+  const [consent, setConsent] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState("");
+  const [fieldErrs, setFieldErrs] = useState({ email: "", link: "", consent: "" });
   const fileRef = useRef();
 
   function setAns(id, val) {
@@ -30,19 +33,42 @@ export default function ApplyInlineForm({ job, open, onSubmitted }) {
     return !!a;
   });
 
+  function isValidEmail(v) {
+    const s = (v || "").trim();
+    // pragmatic check (not perfect RFC, but good UX)
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
+  }
+
+  function isValidUrl(v) {
+    const s = (v || "").trim();
+    try {
+      const u = new URL(s);
+      return u.protocol === "http:" || u.protocol === "https:";
+    } catch {
+      return false;
+    }
+  }
+
+  const emailOk = isValidEmail(email);
+  const linkOk = isValidUrl(linkedin);
+
   const ready =
     firstName.trim() &&
     lastName.trim() &&
     email.trim() &&
     linkedin.trim() &&
+    emailOk &&
+    linkOk &&
     allAnswered &&
     !!file &&
+    consent &&
     !submitting;
 
   async function handleSubmit() {
     if (!ready) return;
     setSubmitting(true);
     setErr("");
+    setFieldErrs({ email: "", link: "", consent: "" });
     try {
       await applyForJob(job.id, {
         firstName,
@@ -54,7 +80,7 @@ export default function ApplyInlineForm({ job, open, onSubmitted }) {
       });
       onSubmitted?.();
     } catch {
-      setErr("Couldn’t submit right now. Please try again.");
+      setErr(COPY.apply.validation.submitFailed);
     } finally {
       setSubmitting(false);
     }
@@ -75,15 +101,28 @@ export default function ApplyInlineForm({ job, open, onSubmitted }) {
       }}
     >
       <div style={{ fontFamily: "'Afacad Flux',sans-serif", fontWeight: 800, fontSize: 18, color: T.white, marginBottom: 14 }}>
-        Apply
+        {COPY.apply.title}
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
-        <Input label="First name" value={firstName} onChange={(e) => setFirstName(e.target.value)} required />
-        <Input label="Last name" value={lastName} onChange={(e) => setLastName(e.target.value)} required />
+        <Input label={COPY.apply.fields.firstName} value={firstName} onChange={(e) => setFirstName(e.target.value)} required />
+        <Input label={COPY.apply.fields.lastName} value={lastName} onChange={(e) => setLastName(e.target.value)} required />
       </div>
       <div style={{ marginBottom: 14 }}>
-        <Input label="Email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+        <Input
+          label={COPY.apply.fields.email}
+          value={email}
+          onChange={(e) => {
+            const v = e.target.value;
+            setEmail(v);
+            if (!v.trim()) setFieldErrs((p) => ({ ...p, email: "" }));
+            else setFieldErrs((p) => ({ ...p, email: isValidEmail(v) ? "" : COPY.apply.validation.emailInvalid }));
+          }}
+          required
+        />
+        {fieldErrs.email ? (
+          <div style={{ marginTop: 6, fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: "#ff6060" }}>{fieldErrs.email}</div>
+        ) : null}
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -146,29 +185,41 @@ export default function ApplyInlineForm({ job, open, onSubmitted }) {
 
         <div>
           <label style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 13, color: T.mutedL, display: "block", marginBottom: 8 }}>
-            LinkedIn profile URL <span style={{ color: T.pink, fontSize: 11 }}>(required)</span>
+            {COPY.apply.fields.linkedin} <span style={{ color: T.pink, fontSize: 11 }}>*</span>
           </label>
           <input
             value={linkedin}
-            onChange={(e) => setLinkedin(e.target.value)}
-            placeholder="https://linkedin.com/in/yourprofile"
+            onChange={(e) => {
+              const v = e.target.value;
+              setLinkedin(v);
+              if (!v.trim()) setFieldErrs((p) => ({ ...p, link: "" }));
+              else setFieldErrs((p) => ({ ...p, link: isValidUrl(v) ? "" : COPY.apply.validation.linkInvalid }));
+            }}
+            onBlur={() => {
+              if (!linkedin.trim()) return;
+              setFieldErrs((p) => ({ ...p, link: isValidUrl(linkedin) ? "" : COPY.apply.validation.linkInvalid }));
+            }}
+            placeholder={COPY.apply.placeholders.linkedin}
             style={{
               width: "100%",
               padding: "11px 12px",
               borderRadius: 9,
               background: "#181818",
-              border: `1px solid ${T.border}`,
+              border: `1px solid ${fieldErrs.link ? "rgba(255,96,96,0.55)" : T.border}`,
               color: T.white,
               fontFamily: "'DM Sans',sans-serif",
               fontSize: 14,
               outline: "none",
             }}
           />
+          {fieldErrs.link ? (
+            <div style={{ marginTop: 6, fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: "#ff6060" }}>{fieldErrs.link}</div>
+          ) : null}
         </div>
 
         <div>
           <label style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 13, color: T.mutedL, display: "block", marginBottom: 8 }}>
-            CV upload <span style={{ color: T.pink, fontSize: 11 }}>(required)</span>
+            {COPY.apply.fields.cvUpload} <span style={{ color: T.pink, fontSize: 11 }}>*</span>
           </label>
           <div
             onClick={() => fileRef.current.click()}
@@ -181,22 +232,51 @@ export default function ApplyInlineForm({ job, open, onSubmitted }) {
             }}
           >
             <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 13, color: file ? T.pink : T.mutedL }}>
-              {file ? file.name : "Tap to attach your CV (PDF or DOCX)"}
+              {file ? file.name : COPY.apply.placeholders.cvTap}
             </div>
             <input
               ref={fileRef}
               type="file"
-              accept=".pdf,.docx"
+              accept=".pdf"
               style={{ display: "none" }}
               onChange={(e) => setFile(e.target.files[0])}
             />
           </div>
         </div>
 
+        <div style={{ marginTop: 2 }}>
+          <label style={{ display: "flex", gap: 10, alignItems: "flex-start", cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={consent}
+              onChange={(e) => {
+                const v = e.target.checked;
+                setConsent(v);
+                setFieldErrs((p) => ({ ...p, consent: v ? "" : COPY.apply.validation.consentRequired }));
+              }}
+              style={{ marginTop: 3, accentColor: T.pink }}
+            />
+            <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.mutedL, lineHeight: 1.6 }}>
+              {COPY.legal.consentLabelPrefix}{" "}
+              <a href={COPY.legal.privacyPolicyUrl} target="_blank" rel="noreferrer" style={{ color: T.pink, textDecoration: "none" }}>
+                {COPY.legal.consentLabelPrivacy}
+              </a>{" "}
+              {COPY.legal.consentLabelAnd}{" "}
+              <a href={COPY.legal.termsUrl} target="_blank" rel="noreferrer" style={{ color: T.pink, textDecoration: "none" }}>
+                {COPY.legal.consentLabelTerms}
+              </a>
+              {COPY.legal.consentLabelSuffix}
+            </span>
+          </label>
+          {fieldErrs.consent ? (
+            <div style={{ marginTop: 6, fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: "#ff6060" }}>{fieldErrs.consent}</div>
+          ) : null}
+        </div>
+
         {err && <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: "#ff6060" }}>{err}</div>}
 
         <ButtonPink disabled={!ready} onClick={handleSubmit} full>
-          {submitting ? "Submitting…" : "Submit application"}
+          {submitting ? COPY.apply.submitButton.submitting : COPY.apply.submitButton.idle}
         </ButtonPink>
       </div>
     </div>
