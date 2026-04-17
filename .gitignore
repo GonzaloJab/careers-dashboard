@@ -24,8 +24,10 @@ cvs/
 CLAUDE_CODE_START.md
 CLAUDE_CODE_CONTEXT.md
 
-# Local scripts
-scripts/
+# Scripts are part of the repo. Only ignore local-only helpers/artifacts.
+scripts/_local/
+scripts/**/*.log
+scripts/**/.DS_Store
 test_files/
 # Local debug artifacts
 tmp_ai_debug/
