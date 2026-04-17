@@ -1,0 +1,70 @@
+{
+  "_meta": {
+    "notes": "Centralized copy for PUBLIC pages (Board + Job + Apply flow) and default outbound emails. Avoid recruiter/dashboard strings unless they are part of an email template.",
+    "placeholders": {
+      "emails": [
+        "{name}",
+        "{job_title}",
+        "{booking_link}"
+      ]
+    }
+  },
+  "board": {
+    "heroTitleTop": "Shape the future",
+    "heroTitleEmphasis": "of financial infrastructure.",
+    "heroSubtitle": "Boutique fintech consultancy at the intersection of data, distributed ledger technology, and payments.",
+    "openPositionsLabel": "Open positions:",
+    "noMatches": "No positions match the selected filters.",
+    "footer": "© 2025 Laminar · All rights reserved"
+  },
+  "job": {
+    "openPositionKicker": "Open position",
+    "backToJobs": "Back to jobs",
+    "applyCta": "Apply for this position",
+    "backButton": "← Back",
+    "receivedTitle": "Application received",
+    "receivedBody": "Thank you for applying. We’ll be in contact soon."
+  },
+  "apply": {
+    "title": "Apply",
+    "fields": {
+      "firstName": "First name",
+      "lastName": "Last name",
+      "email": "Email",
+      "linkedin": "LinkedIn profile URL",
+      "cvUpload": "CV upload"
+    },
+    "placeholders": {
+      "linkedin": "https://linkedin.com/in/yourprofile",
+      "cvTap": "Tap to attach your CV (PDF only)"
+    },
+    "validation": {
+      "emailInvalid": "Please enter a valid email address.",
+      "linkInvalid": "Please enter a valid URL (including https://).",
+      "consentRequired": "Consent is required to submit your application.",
+      "alreadyApplied": "It looks like you already applied for this position with this email address.",
+      "submitFailed": "Couldn’t submit right now. Please try again."
+    },
+    "submitButton": {
+      "idle": "Submit application",
+      "submitting": "Submitting…"
+    }
+  },
+  "legal": {
+    "privacyPolicyUrl": "https://www.laminarpay.com/privacy",
+    "termsUrl": "https://www.laminarpay.com/terms",
+    "consentLabelPrefix": "I consent to the processing of my personal data for recruitment purposes, in accordance with the",
+    "consentLabelPrivacy": "Privacy Policy",
+    "consentLabelAnd": "and",
+    "consentLabelTerms": "Terms",
+    "consentLabelSuffix": "."
+  },
+  "emails": {
+    "contact": {
+      "_where": "Used by recruiter action to invite applicant to continue. Sent by backend via POST /applicants/{id}/contact.",
+      "subject": "Laminar Careers — Next steps",
+      "body": "Hi {name},\n\nThank you for applying for {job_title}. We would like to invite you to continue the process.\n\nBook your Interview\n{booking_link}\n\nBest regards,\nLaminar Careers"
+    }
+  }
+}
+

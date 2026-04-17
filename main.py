@@ -40,8 +40,12 @@ SMTP_PASS     = os.getenv("SMTP_PASS", "")
 MAIL_FROM     = os.getenv("MAIL_FROM", SMTP_USER)
 
 # Recruiter "contact" email (invite to continue process)
-CONTACT_BOOKING_URL = os.getenv("CONTACT_BOOKING_URL", "").strip()
-CONTACT_EMAIL_SUBJECT = os.getenv("CONTACT_EMAIL_SUBJECT", "Laminar Careers — Next steps").strip() or "Laminar Careers — Next steps"
+CONTACT_BOOKING_URL = (
+    os.getenv("CONTACT_BOOKING_URL", "").strip()
+    or os.getenv("BOOKING_MEETING_LINK", "").strip()
+    or os.getenv("TEAMS_BOOKING_LINK", "").strip()
+)
+CONTACT_EMAIL_SUBJECT = os.getenv("CONTACT_EMAIL_SUBJECT", "").strip()
 
 # Microsoft Graph (app-only)
 MS_TENANT_ID       = os.getenv("MS_TENANT_ID", "")
@@ -229,17 +233,44 @@ def send_email(to_email: str, subject: str, body: str):
         s.login(SMTP_USER, SMTP_PASS)
         s.send_message(msg)
 
+_COPY_CACHE: Dict[str, Any] = {}
+
+def load_copy() -> Dict[str, Any]:
+    """
+    Loads shared copy from `frontend/src/content/copy.json`.
+    Used to keep default email templates in the same place as UI copy.
+    """
+    global _COPY_CACHE
+    if _COPY_CACHE:
+        return _COPY_CACHE
+    try:
+        p = Path(__file__).resolve().parent / "frontend" / "src" / "content" / "copy.json"
+        _COPY_CACHE = json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        _COPY_CACHE = {}
+    return _COPY_CACHE
+
+def _tmpl(s: str, **kv) -> str:
+    out = s or ""
+    for k, v in kv.items():
+        out = out.replace("{" + k + "}", str(v if v is not None else ""))
+    return out
+
 def build_contact_email(name: str, job_title: str, booking_url: str) -> str:
-    url = (booking_url or "").strip() or "(booking link missing)"
+    cp = load_copy()
+    tmpl = (((cp.get("emails") or {}).get("contact") or {}).get("body")) if isinstance(cp, dict) else None
+    default_tmpl = (
+        "Hi {name},\n\n"
+        "Thank you for applying for {job_title}. We would like to invite you to continue the process.\n\n"
+        "Book your Interview\n"
+        "{booking_link}\n\n"
+        "Best regards,\nLaminar Careers"
+    )
+    t = tmpl or default_tmpl
     nm = (name or "").strip() or "there"
     jt = (job_title or "").strip() or "the position"
-    return (
-        f"Hi {nm},\n\n"
-        f"Thank you for applying for {jt}. We would like to invite you to continue the process.\n\n"
-        f"Please book a slot using this link:\n{url}\n\n"
-        "Best regards,\n"
-        "Laminar Careers"
-    )
+    url = (booking_url or "").strip() or "(booking link missing)"
+    return _tmpl(t, name=nm, job_title=jt, booking_link=url)
 
 # ── Auth ──────────────────────────────────────────────────────
 def require_auth(creds: HTTPBasicCredentials = Depends(security)):
@@ -751,9 +782,13 @@ def contact_applicant(applicant_id: int, _=Depends(require_auth)):
     if not row["email"]:
         return {"ok": True, "mail_sent": False, "mail_error": "Applicant has no email", "status": "contacted"}
 
+    # Subject from env overrides JSON; otherwise use JSON default.
+    cp = load_copy()
+    subj = CONTACT_EMAIL_SUBJECT or (((cp.get("emails") or {}).get("contact") or {}).get("subject") if isinstance(cp, dict) else "") or "Laminar Careers — Next steps"
+
     body = build_contact_email(row["first_name"] or row["name"] or "there", row["job_title"] or "", CONTACT_BOOKING_URL)
     try:
-        send_email(row["email"], CONTACT_EMAIL_SUBJECT, body)
+        send_email(row["email"], subj, body)
         mail_sent = True
     except Exception as e:
         mail_sent = False
