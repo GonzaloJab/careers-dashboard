@@ -100,6 +100,19 @@ export default function Dashboard({ jobs, setJobs, applicants: initApps, onBack,
     return resp;
   }
 
+  async function contactApplicant(appId) {
+    const resp = await apiJson(`/applicants/${appId}/contact`, {
+      method: "POST",
+      headers: { Authorization: authHeader },
+    });
+    setApps((p) => p.map((a) => (a.id === appId ? { ...a, status: "contacted" } : a)));
+    if (selApp?.id === appId) setSelApp((p) => ({ ...p, status: "contacted" }));
+    if (resp?.mail_sent === false) {
+      alert(`Contact email failed: ${resp?.mail_error || "unknown error"}`);
+    }
+    return resp;
+  }
+
   function rejectApp(appId) {
     changeAppStatus(appId, "rejected");
   }
@@ -369,7 +382,7 @@ export default function Dashboard({ jobs, setJobs, applicants: initApps, onBack,
 
         {/* Status filters */}
         <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginBottom: 16 }}>
-          {["All", "new", "shortlisted", "interview", "rejected"].map((s) => (
+          {["All", "new", "shortlisted", "interview", "contacted", "rejected"].map((s) => (
             <Pill key={s} label={s === "All" ? "All status" : s} active={fStat === s} onClick={() => setFStat(s)} />
           ))}
         </div>
@@ -443,24 +456,44 @@ export default function Dashboard({ jobs, setJobs, applicants: initApps, onBack,
                       )}
                     </td>
                     <td style={{ padding: "13px 14px" }} onClick={(e) => e.stopPropagation()}>
-                      {a.status !== "rejected" && (
-                        <button
-                          onClick={() => rejectApp(a.id)}
-                          style={{
-                            padding: "4px 10px",
-                            borderRadius: 7,
-                            border: `1px solid rgba(255,100,100,0.3)`,
-                            background: "transparent",
-                            color: "#ff6060",
-                            cursor: "pointer",
-                            fontFamily: "'DM Sans',sans-serif",
-                            fontSize: 11,
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          Reject
-                        </button>
-                      )}
+                      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                        {a.status !== "rejected" && (
+                          <button
+                            onClick={() => contactApplicant(a.id)}
+                            style={{
+                              padding: "4px 10px",
+                              borderRadius: 7,
+                              border: `1px solid rgba(80,200,120,0.28)`,
+                              background: "rgba(80,200,120,0.06)",
+                              color: "#50c878",
+                              cursor: "pointer",
+                              fontFamily: "'DM Sans',sans-serif",
+                              fontSize: 11,
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            Contact
+                          </button>
+                        )}
+                        {a.status !== "rejected" && (
+                          <button
+                            onClick={() => rejectApp(a.id)}
+                            style={{
+                              padding: "4px 10px",
+                              borderRadius: 7,
+                              border: `1px solid rgba(255,100,100,0.3)`,
+                              background: "transparent",
+                              color: "#ff6060",
+                              cursor: "pointer",
+                              fontFamily: "'DM Sans',sans-serif",
+                              fontSize: 11,
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            Reject
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );

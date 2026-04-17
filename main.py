@@ -39,6 +39,10 @@ SMTP_USER     = os.getenv("SMTP_USER", "")
 SMTP_PASS     = os.getenv("SMTP_PASS", "")
 MAIL_FROM     = os.getenv("MAIL_FROM", SMTP_USER)
 
+# Recruiter "contact" email (invite to continue process)
+CONTACT_BOOKING_URL = os.getenv("CONTACT_BOOKING_URL", "").strip()
+CONTACT_EMAIL_SUBJECT = os.getenv("CONTACT_EMAIL_SUBJECT", "Laminar Careers — Next steps").strip() or "Laminar Careers — Next steps"
+
 # Microsoft Graph (app-only)
 MS_TENANT_ID       = os.getenv("MS_TENANT_ID", "")
 MS_CLIENT_ID       = os.getenv("MS_CLIENT_ID", "")
@@ -224,6 +228,18 @@ def send_email(to_email: str, subject: str, body: str):
         s.ehlo()
         s.login(SMTP_USER, SMTP_PASS)
         s.send_message(msg)
+
+def build_contact_email(name: str, job_title: str, booking_url: str) -> str:
+    url = (booking_url or "").strip() or "(booking link missing)"
+    nm = (name or "").strip() or "there"
+    jt = (job_title or "").strip() or "the position"
+    return (
+        f"Hi {nm},\n\n"
+        f"Thank you for applying for {jt}. We would like to invite you to continue the process.\n\n"
+        f"Please book a slot using this link:\n{url}\n\n"
+        "Best regards,\n"
+        "Laminar Careers"
+    )
 
 # ── Auth ──────────────────────────────────────────────────────
 def require_auth(creds: HTTPBasicCredentials = Depends(security)):
@@ -669,7 +685,7 @@ def list_applicants(_=Depends(require_auth)):
 def update_status(applicant_id: int, body: dict, _=Depends(require_auth)):
     """Recruiter: update applicant status."""
     status = body.get("status")
-    valid = ["new","shortlisted","interview","rejected"]
+    valid = ["new","shortlisted","interview","contacted","rejected"]
     if status not in valid:
         raise HTTPException(400, f"status must be one of {valid}")
     subject = "Laminar Careers"
@@ -705,6 +721,45 @@ def update_status(applicant_id: int, body: dict, _=Depends(require_auth)):
             mail_error = str(e)
 
     return {"ok": True, "mail_sent": mail_sent, "mail_error": mail_error}
+
+@app.post("/applicants/{applicant_id}/contact")
+def contact_applicant(applicant_id: int, _=Depends(require_auth)):
+    """
+    Recruiter: send 'continue process' email + set status=contacted.
+    Does not block status update if email sending fails; returns mail_sent/mail_error.
+    """
+    db = get_db()
+    row = db.execute(
+        """
+        SELECT a.email, a.name, a.first_name, a.job_id, j.title as job_title
+        FROM applicants a
+        LEFT JOIN jobs j ON a.job_id = j.id
+        WHERE a.id=?
+        """,
+        (applicant_id,),
+    ).fetchone()
+    if not row:
+        db.close()
+        raise HTTPException(status_code=404, detail="Applicant not found")
+
+    db.execute("UPDATE applicants SET status=? WHERE id=?", ("contacted", applicant_id))
+    db.commit()
+    db.close()
+
+    mail_sent = None
+    mail_error = None
+    if not row["email"]:
+        return {"ok": True, "mail_sent": False, "mail_error": "Applicant has no email", "status": "contacted"}
+
+    body = build_contact_email(row["first_name"] or row["name"] or "there", row["job_title"] or "", CONTACT_BOOKING_URL)
+    try:
+        send_email(row["email"], CONTACT_EMAIL_SUBJECT, body)
+        mail_sent = True
+    except Exception as e:
+        mail_sent = False
+        mail_error = str(e)
+
+    return {"ok": True, "mail_sent": mail_sent, "mail_error": mail_error, "status": "contacted"}
 
 @app.post("/applicants/{applicant_id}/ai/refresh")
 async def refresh_ai_for_applicant(

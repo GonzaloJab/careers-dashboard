@@ -276,11 +276,32 @@ export default function ApplicantModal({ applicant, job, onClose, onStatusChange
         <div style={{ marginTop: 20 }}>
           <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.muted, marginBottom: 8 }}>Change status</div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {["new", "shortlisted", "interview", "rejected"].map((s) => (
+            {["new", "shortlisted", "interview", "contacted", "rejected"].map((s) => (
               <button
                 key={s}
                 disabled={rejectSending}
                 onClick={async () => {
+                  if (s === "contacted") {
+                    // Use the dedicated endpoint to both email + update state.
+                    try {
+                      const resp = await fetch(`/api/applicants/${applicant.id}/contact`, {
+                        method: "POST",
+                        headers: {
+                          ...(authHeader ? { Authorization: authHeader } : {}),
+                        },
+                      });
+                      const data = await resp.json().catch(() => null);
+                      if (!resp.ok) throw new Error("contact_failed");
+                      // Keep state update path consistent with the rest of the modal.
+                      await onStatusChange(applicant.id, "contacted");
+                      if (data?.mail_sent === false) {
+                        alert(`Contact email failed: ${data?.mail_error || "unknown error"}`);
+                      }
+                    } catch {
+                      alert("Could not contact applicant (service may be down).");
+                    }
+                    return;
+                  }
                   if (s !== "rejected") {
                     try {
                       await onStatusChange(applicant.id, s);

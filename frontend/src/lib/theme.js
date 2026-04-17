@@ -15,6 +15,7 @@ export const STATUS_COLORS = {
   new: { bg: "rgba(246,4,183,0.1)", text: "#f604b7" },
   shortlisted: { bg: "rgba(80,200,120,0.1)", text: "#50c878" },
   interview: { bg: "rgba(100,150,255,0.1)", text: "#6699ff" },
+  contacted: { bg: "rgba(80,200,120,0.1)", text: "#50c878" },
   rejected: { bg: "rgba(255,100,100,0.09)", text: "#ff6060" },
 };
 
