@@ -24,7 +24,52 @@ jobs:
           command_timeout: 30m
           script: |
             set -euo pipefail
-            export DEPLOY_ENV_B64='${{ secrets.CAREERS_ENV_B64 }}'
+
+            # --- write /opt/careers/.env from GitHub secret ---
+            if [ -n '${{ secrets.CAREERS_ENV_B64 }}' ]; then
+              echo "Writing /opt/careers/.env from CAREERS_ENV_B64..."
+              umask 077
+              echo '${{ secrets.CAREERS_ENV_B64 }}' | base64 -d > /opt/careers/.env
+              chmod 600 /opt/careers/.env || true
+            fi
+
             cd /opt/careers
-            bash ./scripts/deploy_on_server.sh
+
+            PREV_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
+            rollback() {
+              if [ -n "${PREV_SHA:-}" ]; then
+                echo "Deploy failed. Rolling back to ${PREV_SHA}."
+                git reset --hard "$PREV_SHA" || true
+                if [ -d "/opt/careers/frontend" ]; then
+                  (cd "/opt/careers/frontend" && npm ci && npm run build) || true
+                fi
+                systemctl restart careers || true
+                systemctl reload nginx || true
+              fi
+            }
+            trap rollback ERR
+
+            echo "Fetching origin/deploy..."
+            git fetch origin deploy --prune
+            echo "Resetting working tree to origin/deploy..."
+            git reset --hard origin/deploy
+
+            echo "Updating backend dependencies..."
+            if [ ! -x "/opt/careers/venv/bin/python" ]; then
+              echo "Missing venv at /opt/careers/venv. Create it first (python3 -m venv /opt/careers/venv)."
+              exit 1
+            fi
+            /opt/careers/venv/bin/pip install --upgrade pip
+            /opt/careers/venv/bin/pip install -r /opt/careers/backend/requirements.txt
+
+            echo "Building frontend..."
+            cd /opt/careers/frontend
+            npm ci
+            npm run build
+
+            echo "Restarting services..."
+            systemctl restart careers
+            systemctl reload nginx
+
+            echo "Deploy OK at $(git rev-parse --short HEAD)"
 
