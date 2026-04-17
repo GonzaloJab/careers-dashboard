@@ -2,9 +2,9 @@
 setlocal EnableExtensions EnableDelayedExpansion
 
 REM Usage:
-REM   push_deploy.bat "your commit message"
+REM   scripts\push_deploy.bat "your commit message"
 
-cd /d "%~dp0"
+cd /d "%~dp0.."
 
 set "MSG=%~1"
 if "%MSG%"=="" set "MSG=chore: deploy"

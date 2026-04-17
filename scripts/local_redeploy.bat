@@ -6,7 +6,7 @@ REM - Builds frontend
 REM - Starts FastAPI backend
 REM - Serves frontend/dist
 
-cd /d "%~dp0"
+cd /d "%~dp0.."
 
 powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\local_redeploy.ps1"
 
