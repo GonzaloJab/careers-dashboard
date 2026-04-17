@@ -6,12 +6,22 @@ import Input from "../ui/Input";
 const WARN =
   "Before changing these settings, check with Gonzalo Jabat. Changes can impact email delivery, AI assessment, cost, and overall performance.";
 
+const MODEL_OPTIONS = [
+  { label: "GPT (cheap) — gpt-4o-mini", value: "openai/gpt-4o-mini" },
+  { label: "GPT (pro) — gpt-4o", value: "openai/gpt-4o" },
+  { label: "Gemini (cheap) — 2.0 Flash", value: "google/gemini-2.0-flash-001" },
+  { label: "Gemini (pro) — 2.0 Pro", value: "google/gemini-2.0-pro-001" },
+  { label: "Opus (cheap) — Claude 3.5 Sonnet", value: "anthropic/claude-3.5-sonnet" },
+  { label: "Opus (pro) — Claude 3 Opus", value: "anthropic/claude-3-opus" },
+];
+
 export default function SettingsModal({ authHeader, onClose }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [values, setValues] = useState({}); // overrides we will PUT
   const [effective, setEffective] = useState({}); // env/db effective display
   const [err, setErr] = useState("");
+  const [copied, setCopied] = useState(false);
 
   const azureLinks = useMemo(
     () => ({
@@ -119,17 +129,42 @@ export default function SettingsModal({ authHeader, onClose }) {
               <div style={{ background: "#171717", border: `1px solid ${T.border}`, borderRadius: 12, padding: "12px 14px" }}>
                 <div style={{ fontFamily: "'Afacad Flux',sans-serif", fontWeight: 800, fontSize: 14, color: T.white, marginBottom: 6 }}>OpenRouter</div>
                 <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.muted, marginBottom: 10 }}>
-                  Model is used for AI assessment. Key is shown for visibility but is not editable here.
+                  Model is used for AI assessment.
                 </div>
-
-                <Input label="OpenRouter API key (read-only)" value={effective?.OPENROUTER_API_KEY || ""} onChange={() => {}} />
-                <div style={{ height: 10 }} />
-                <Input
-                  label="OpenRouter model"
+                <label style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.muted, display: "block", marginBottom: 5 }}>
+                  OpenRouter model
+                </label>
+                <select
                   value={values?.OPENROUTER_MODEL ?? effective?.OPENROUTER_MODEL ?? ""}
                   onChange={(e) => setValues((p) => ({ ...(p || {}), OPENROUTER_MODEL: e.target.value }))}
-                  placeholder="gpt-4o-mini"
-                />
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: 9,
+                    background: "#181818",
+                    border: `1px solid ${T.border}`,
+                    color: T.white,
+                    fontFamily: "'DM Sans',sans-serif",
+                    fontSize: 14,
+                    outline: "none",
+                    display: "block",
+                  }}
+                >
+                  {/* Keep current value visible even if not in the list */}
+                  {(() => {
+                    const cur = values?.OPENROUTER_MODEL ?? effective?.OPENROUTER_MODEL ?? "";
+                    const exists = MODEL_OPTIONS.some((o) => o.value === cur);
+                    if (cur && !exists) {
+                      return <option value={cur}>Current: {cur}</option>;
+                    }
+                    return null;
+                  })()}
+                  {MODEL_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
                 <div style={{ height: 10 }} />
                 <Input
                   label="OpenRouter base URL"
@@ -153,8 +188,40 @@ export default function SettingsModal({ authHeader, onClose }) {
                   value={values?.CONTACT_BOOKING_URL ?? effective?.CONTACT_BOOKING_URL ?? ""}
                   onChange={(e) => setValues((p) => ({ ...(p || {}), CONTACT_BOOKING_URL: e.target.value }))}
                 />
-                <div style={{ marginTop: 8, fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.muted }}>
-                  Current env fallbacks: BOOKING_MEETING_LINK={effective?.BOOKING_MEETING_LINK || ""} · TEAMS_BOOKING_LINK={effective?.TEAMS_BOOKING_LINK || ""}
+                <div style={{ marginTop: 10, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    className="action-btn"
+                    onClick={async () => {
+                      const link =
+                        effective?.CONTACT_BOOKING_URL || effective?.BOOKING_MEETING_LINK || effective?.TEAMS_BOOKING_LINK || "";
+                      if (!link) return;
+                      try {
+                        await navigator.clipboard.writeText(link);
+                        setCopied(true);
+                        setTimeout(() => setCopied(false), 1200);
+                      } catch {
+                        window.prompt("Copy link:", link);
+                      }
+                    }}
+                    style={{
+                      background: "transparent",
+                      border: `1px solid ${T.border}`,
+                      color: T.mutedL,
+                      padding: "7px 10px",
+                      borderRadius: 10,
+                      cursor: "pointer",
+                      fontFamily: "'DM Sans',sans-serif",
+                      fontSize: 12,
+                      fontWeight: 700,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {copied ? "Copied" : "Copy current link"}
+                  </button>
+                  <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.muted, overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {effective?.CONTACT_BOOKING_URL || effective?.BOOKING_MEETING_LINK || effective?.TEAMS_BOOKING_LINK || ""}
+                  </span>
                 </div>
               </div>
 
