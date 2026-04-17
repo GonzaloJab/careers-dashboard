@@ -7,6 +7,7 @@ import Logo from "../components/Logo";
 import { Pill, StatusBadge, Tag } from "../ui";
 import ApplicantModal from "../modals/ApplicantModal";
 import JobFormModal from "../modals/JobFormModal";
+import SettingsModal from "../modals/SettingsModal";
 
 export default function Dashboard({ jobs, setJobs, applicants: initApps, onBack, authHeader, onRefreshApplicants }) {
   const [apps, setApps] = useState(initApps);
@@ -19,6 +20,7 @@ export default function Dashboard({ jobs, setJobs, applicants: initApps, onBack,
   const [editJob, setEditJob] = useState(null);
   const [selApp, setSelApp] = useState(null);
   const [busy, setBusy] = useState({});
+  const [showSettings, setShowSettings] = useState(false);
 
   useEffect(() => {
     setApps(initApps || []);
@@ -226,6 +228,7 @@ export default function Dashboard({ jobs, setJobs, applicants: initApps, onBack,
           onAIRefresh={refreshApplicantAI}
         />
       )}
+      {showSettings && <SettingsModal authHeader={authHeader} onClose={() => setShowSettings(false)} />}
 
       {/* Nav */}
       <div
@@ -238,7 +241,31 @@ export default function Dashboard({ jobs, setJobs, applicants: initApps, onBack,
           justifyContent: "space-between",
         }}
       >
-        <Logo height={72} />
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <button
+            className="action-btn"
+            onClick={() => setShowSettings(true)}
+            title="Settings"
+            aria-label="Settings"
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 12,
+              background: T.pinkDim,
+              border: `1px solid rgba(246,4,183,0.35)`,
+              color: T.pink,
+              cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 18,
+              fontWeight: 900,
+            }}
+          >
+            ⚙
+          </button>
+          <Logo height={72} />
+        </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <span className="desktop-only" style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.muted }}>
             Recruiter dashboard

@@ -57,6 +57,27 @@ _graph_token_cache: Dict[str, Any] = {"access_token": None, "expires_at": 0}
 
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
+# ── Settings (DB-backed overrides for .env) ─────────────────────
+def _setting_get(key: str) -> Optional[str]:
+    try:
+        db = get_db()
+        row = db.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+        db.close()
+        return (row["value"] if row else None)
+    except Exception:
+        return None
+
+
+def get_config(key: str, default: str = "") -> str:
+    """
+    Read config from DB settings first, then fallback to environment (.env / systemd).
+    Empty strings in DB are treated as "unset".
+    """
+    v = _setting_get(key)
+    if v is not None and str(v).strip() != "":
+        return str(v).strip()
+    return (os.getenv(key, default) or default).strip()
+
 # ── DB init ───────────────────────────────────────────────────
 def get_db():
     conn = sqlite3.connect(DB_PATH)
@@ -100,6 +121,12 @@ def init_db():
             status     TEXT DEFAULT 'new',
             applied_at TEXT DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (job_id) REFERENCES jobs(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS settings (
+            key         TEXT PRIMARY KEY,
+            value       TEXT NOT NULL,
+            updated_at  TEXT DEFAULT CURRENT_TIMESTAMP
         );
     """)
 
@@ -171,7 +198,11 @@ backfill_job_public_ids()
 
 # ── Email ──────────────────────────────────────────────────────
 def _graph_get_token() -> str:
-    if not (MS_TENANT_ID and MS_CLIENT_ID and MS_CLIENT_SECRET and MS_MAIL_SENDER):
+    ms_tenant = get_config("MS_TENANT_ID", MS_TENANT_ID)
+    ms_client = get_config("MS_CLIENT_ID", MS_CLIENT_ID)
+    ms_secret = get_config("MS_CLIENT_SECRET", MS_CLIENT_SECRET)
+    ms_sender = get_config("MS_MAIL_SENDER", MS_MAIL_SENDER)
+    if not (ms_tenant and ms_client and ms_secret and ms_sender):
         raise RuntimeError("Microsoft Graph is not configured")
     now = int(time.time())
     tok = _graph_token_cache.get("access_token")
@@ -179,10 +210,10 @@ def _graph_get_token() -> str:
     if tok and exp - 60 > now:
         return str(tok)
 
-    url = f"https://login.microsoftonline.com/{MS_TENANT_ID}/oauth2/v2.0/token"
+    url = f"https://login.microsoftonline.com/{ms_tenant}/oauth2/v2.0/token"
     data = {
-        "client_id": MS_CLIENT_ID,
-        "client_secret": MS_CLIENT_SECRET,
+        "client_id": ms_client,
+        "client_secret": ms_secret,
         "grant_type": "client_credentials",
         "scope": "https://graph.microsoft.com/.default",
     }
@@ -200,7 +231,8 @@ def _graph_get_token() -> str:
 
 def send_email_graph(to_email: str, subject: str, body: str):
     token = _graph_get_token()
-    url = f"https://graph.microsoft.com/v1.0/users/{MS_MAIL_SENDER}/sendMail"
+    ms_sender = get_config("MS_MAIL_SENDER", MS_MAIL_SENDER)
+    url = f"https://graph.microsoft.com/v1.0/users/{ms_sender}/sendMail"
     payload = {
         "message": {
             "subject": subject,
@@ -216,7 +248,11 @@ def send_email_graph(to_email: str, subject: str, body: str):
 
 def send_email(to_email: str, subject: str, body: str):
     # Prefer Graph if configured (M365 tenants often disable SMTP AUTH).
-    if MS_TENANT_ID and MS_CLIENT_ID and MS_CLIENT_SECRET and MS_MAIL_SENDER:
+    ms_tenant = get_config("MS_TENANT_ID", MS_TENANT_ID)
+    ms_client = get_config("MS_CLIENT_ID", MS_CLIENT_ID)
+    ms_secret = get_config("MS_CLIENT_SECRET", MS_CLIENT_SECRET)
+    ms_sender = get_config("MS_MAIL_SENDER", MS_MAIL_SENDER)
+    if ms_tenant and ms_client and ms_secret and ms_sender:
         return send_email_graph(to_email, subject, body)
 
     if not (SMTP_HOST and SMTP_USER and SMTP_PASS and MAIL_FROM):
@@ -291,6 +327,58 @@ def require_auth(creds: HTTPBasicCredentials = Depends(security)):
         )
     return creds
 
+
+# ── Recruiter settings API ──────────────────────────────────────
+@app.get("/settings")
+def get_settings(_=Depends(require_auth)):
+    """
+    Recruiter: fetch current settings (DB overrides).
+    Values are returned as-is because only authenticated recruiters can access this endpoint.
+    """
+    db = get_db()
+    rows = db.execute("SELECT key, value FROM settings").fetchall()
+    db.close()
+    return {r["key"]: r["value"] for r in rows}
+
+
+@app.put("/settings")
+def put_settings(body: dict, _=Depends(require_auth)):
+    """Recruiter: upsert settings. Body must be a JSON object."""
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="Body must be a JSON object")
+
+    allowed = {
+        "MS_TENANT_ID",
+        "MS_CLIENT_ID",
+        "MS_CLIENT_SECRET",
+        "MS_MAIL_SENDER",
+        "OPENROUTER_API_KEY",
+        "OPENROUTER_MODEL",
+        "OPENROUTER_BASE_URL",
+        "CONTACT_BOOKING_URL",
+    }
+    db = get_db()
+    for k, v in body.items():
+        if k not in allowed:
+            continue
+        val = "" if v is None else str(v)
+        db.execute(
+            """
+            INSERT INTO settings(key, value, updated_at)
+            VALUES(?,?,CURRENT_TIMESTAMP)
+            ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=CURRENT_TIMESTAMP
+            """,
+            (k, val),
+        )
+    db.commit()
+    db.close()
+
+    # Graph token should be refreshed when credentials change.
+    _graph_token_cache["access_token"] = None
+    _graph_token_cache["expires_at"] = 0
+
+    return {"ok": True}
+
 # ── JSON helpers ───────────────────────────────────────────────
 def _json_loads_or(value: Optional[str], fallback):
     if value is None:
@@ -321,9 +409,11 @@ def _applicant_row_to_api(row: sqlite3.Row) -> dict:
 
 # ── AI assessment (OpenRouter) ─────────────────────────────────
 def _openrouter_client() -> OpenAI:
-    if not OPENROUTER_KEY:
+    key = get_config("OPENROUTER_API_KEY", OPENROUTER_KEY)
+    base_url = get_config("OPENROUTER_BASE_URL", OPENROUTER_BASE_URL)
+    if not key:
         raise RuntimeError("OPENROUTER_API_KEY is not configured")
-    return OpenAI(api_key=OPENROUTER_KEY, base_url=OPENROUTER_BASE_URL)
+    return OpenAI(api_key=key, base_url=base_url)
 
 
 def _build_ai_prompt(job: dict, ai_requirements: str, cv_text: str) -> str:
@@ -386,16 +476,17 @@ async def assess_applicant_async(applicant_id: int, job_id: int, cv_text: str):
         ai_req = job.get("ai_requirements") or ""
         db.close()
 
+        model = get_config("OPENROUTER_MODEL", OPENROUTER_MODEL) or OPENROUTER_MODEL
         print(
             f"[AI] Starting assessment applicant_id={applicant_id} job_id={job_id} "
-            f"cv_chars={len(cv_text)} ai_req_chars={len(ai_req)} model={OPENROUTER_MODEL}"
+            f"cv_chars={len(cv_text)} ai_req_chars={len(ai_req)} model={model}"
         )
 
         prompt = _build_ai_prompt(job, ai_req, cv_text)
 
         client = _openrouter_client()
         resp = client.chat.completions.create(
-            model=OPENROUTER_MODEL,
+            model=model,
             messages=[
                 {"role": "system", "content": "You are a meticulous recruiting assistant."},
                 {"role": "user", "content": prompt},
@@ -784,9 +875,17 @@ def contact_applicant(applicant_id: int, _=Depends(require_auth)):
 
     # Subject from env overrides JSON; otherwise use JSON default.
     cp = load_copy()
-    subj = CONTACT_EMAIL_SUBJECT or (((cp.get("emails") or {}).get("contact") or {}).get("subject") if isinstance(cp, dict) else "") or "Laminar Careers — Next steps"
+    subj = (get_config("CONTACT_EMAIL_SUBJECT", CONTACT_EMAIL_SUBJECT) or "").strip() or (
+        (((cp.get("emails") or {}).get("contact") or {}).get("subject") if isinstance(cp, dict) else "") or "Laminar Careers — Next steps"
+    )
 
-    body = build_contact_email(row["first_name"] or row["name"] or "there", row["job_title"] or "", CONTACT_BOOKING_URL)
+    booking = (
+        get_config("CONTACT_BOOKING_URL", "").strip()
+        or get_config("BOOKING_MEETING_LINK", "").strip()
+        or get_config("TEAMS_BOOKING_LINK", "").strip()
+        or CONTACT_BOOKING_URL
+    )
+    body = build_contact_email(row["first_name"] or row["name"] or "there", row["job_title"] or "", booking)
     try:
         send_email(row["email"], subj, body)
         mail_sent = True
