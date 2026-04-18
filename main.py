@@ -273,18 +273,41 @@ _COPY_CACHE: Dict[str, Any] = {}
 
 def load_copy() -> Dict[str, Any]:
     """
-    Loads shared copy from `frontend/src/content/copy.json`.
-    Used to keep default email templates in the same place as UI copy.
+    Loads shared copy from `frontend/editable_text_content.json` (same file the Vite app bundles).
+    Used for default email templates and to stay aligned with public UI copy.
     """
     global _COPY_CACHE
     if _COPY_CACHE:
         return _COPY_CACHE
-    try:
-        p = Path(__file__).resolve().parent / "frontend" / "src" / "content" / "copy.json"
-        _COPY_CACHE = json.loads(p.read_text(encoding="utf-8"))
-    except Exception:
+    root = Path(__file__).resolve().parent
+    candidates = [
+        root / "frontend" / "editable_text_content.json",
+        root / "frontend" / "src" / "content" / "copy.json",
+    ]
+    for p in candidates:
+        try:
+            if p.is_file():
+                _COPY_CACHE = json.loads(p.read_text(encoding="utf-8"))
+                break
+        except Exception:
+            continue
+    if not _COPY_CACHE:
         _COPY_CACHE = {}
     return _COPY_CACHE
+
+
+def default_rejection_body() -> str:
+    """Body text when a job has no rejection_template; from JSON or hardcoded fallback."""
+    cp = load_copy()
+    body = (((cp.get("emails") or {}).get("rejection") or {}).get("body")) if isinstance(cp, dict) else None
+    if isinstance(body, str) and body.strip():
+        return body.strip()
+    return (
+        "Hi {name},\n\n"
+        "Thank you for applying. After reviewing your application, we will not be moving forward at this time.\n\n"
+        "We appreciate your interest and encourage you to apply for future openings.\n\n"
+        "Best regards,\nLaminar Careers"
+    )
 
 def _tmpl(s: str, **kv) -> str:
     out = s or ""
@@ -412,6 +435,7 @@ def _job_row_to_api(row: sqlite3.Row) -> dict:
     d["questions"] = _json_loads_or(d.get("questions"), [])
     d["criteria"] = _json_loads_or(d.get("criteria"), [])
     d["ai_requirements"] = d.get("ai_requirements") or ""
+    d["rejection_template"] = (d.get("rejection_template") or "").strip()
     return d
 
 
@@ -845,12 +869,7 @@ def update_status(applicant_id: int, body: dict, _=Depends(require_auth)):
         name = row["name"] or "there"
         template = (job_row["rejection_template"] if job_row else "") or ""
         if not template.strip():
-            template = (
-                "Hi {name},\n\n"
-                "Thank you for applying. After reviewing your application, we will not be moving forward at this time.\n\n"
-                "We appreciate your interest and encourage you to apply for future openings.\n\n"
-                "Best regards,\nLaminar Careers"
-            )
+            template = default_rejection_body()
         message = template.replace("{name}", name)
         try:
             send_email(row["email"], subject, message)

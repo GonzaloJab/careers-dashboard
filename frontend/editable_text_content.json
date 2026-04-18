@@ -64,6 +64,10 @@
       "_where": "Used by recruiter action to invite applicant to continue. Sent by backend via POST /applicants/{id}/contact.",
       "subject": "Laminar Careers — Next steps",
       "body": "Hi {name},\n\nThank you for applying for {job_title}. We would like to invite you to continue the process.\n\nBook your Interview\n{booking_link}\n\nBest regards,\nLaminar Careers"
+    },
+    "rejection": {
+      "_where": "Default rejection email body when this job has no custom template saved. Per-job override is stored on the job record. Sent when status becomes rejected. Subject is always “Laminar Careers”.",
+      "body": "Hi {name},\n\nThank you for applying. After reviewing your application, we will not be moving forward at this time.\n\nWe appreciate your interest and encourage you to apply for future openings.\n\nBest regards,\nLaminar Careers"
     }
   }
 }

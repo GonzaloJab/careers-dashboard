@@ -1,25 +1,47 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { T } from "../lib/theme";
 import { JOB_STATUSES, LOCS, REMOTES, SENS, TEAMS, TYPES } from "../data/staticData";
 import { ButtonPink, Input, SelectField } from "../ui";
+import { COPY } from "../content/copy";
+
+const FALLBACK_REJECTION_BODY =
+  "Hi {name},\n\nThank you for applying. After reviewing your application, we will not be moving forward at this time.\n\nWe appreciate your interest and encourage you to apply for future openings.\n\nBest regards,\nLaminar Careers";
+
+function defaultRejectionBody() {
+  const b = COPY.emails?.rejection?.body;
+  return (typeof b === "string" && b.trim()) ? b.trim() : FALLBACK_REJECTION_BODY;
+}
+
+/** API may omit or empty rejection_template; show the same default the backend uses when sending. */
+function jobToFormState(row) {
+  if (!row) return null;
+  const stored = row.rejection_template != null ? String(row.rejection_template).trim() : "";
+  return {
+    ...row,
+    rejection_template: stored || defaultRejectionBody(),
+    ai_requirements: row.ai_requirements != null ? String(row.ai_requirements) : "",
+  };
+}
 
 export default function JobFormModal({ initial, onClose, onSave }) {
-  const blank = {
-    title: "",
-    team: "Retail",
-    location: "Madrid",
-    remote: "Hybrid",
-    seniority: "Senior",
-    type: "Full-time",
-    description: "",
-    status: "drafting",
-    questions: [],
-    criteria: [],
-    ai_requirements: "",
-    rejection_template:
-      "Hi {name},\n\nThank you for applying. After reviewing your application, we will not be moving forward at this time.\n\nWe appreciate your interest and encourage you to apply for future openings.\n\nBest regards,\nLaminar Careers",
-  };
-  const [form, setForm] = useState(initial ? { ...initial } : blank);
+  const blank = useMemo(
+    () => ({
+      title: "",
+      team: "Retail",
+      location: "Madrid",
+      remote: "Hybrid",
+      seniority: "Senior",
+      type: "Full-time",
+      description: "",
+      status: "drafting",
+      questions: [],
+      criteria: [],
+      ai_requirements: "",
+      rejection_template: defaultRejectionBody(),
+    }),
+    []
+  );
+  const [form, setForm] = useState(() => (initial ? jobToFormState(initial) : { ...blank }));
   const [qForm, setQF] = useState({ label: "", type: "select", options: "", isMust: false });
   const [cForm, setCF] = useState({ questionId: "", label: "", matchValues: "" });
 
@@ -57,6 +79,12 @@ export default function JobFormModal({ initial, onClose, onSave }) {
 
   const valid = form.title && form.description && form.questions.length > 0;
   const qReady = (qForm.label || "").trim().length > 0 && (qForm.options || "").trim().length > 0;
+
+  const contactTpl = COPY.emails?.contact || {};
+  const aiLines = (form.ai_requirements || "")
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean);
 
   return (
     <div
@@ -129,13 +157,46 @@ export default function JobFormModal({ initial, onClose, onSave }) {
           </div>
         </div>
 
-        {/* Rejection email */}
+        {/* Global reference: contact (next steps) email — same source as backend */}
         <div style={{ marginBottom: 22 }}>
-          <div style={{ fontFamily: "'Afacad Flux',sans-serif", fontWeight: 600, fontSize: 16, color: T.white, marginBottom: 10 }}>
-            Rejection email template
+          <div style={{ fontFamily: "'Afacad Flux',sans-serif", fontWeight: 600, fontSize: 16, color: T.white, marginBottom: 6 }}>
+            Next steps (contact) email — reference
           </div>
           <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.muted, marginBottom: 10, lineHeight: 1.6 }}>
-            Used when you mark an applicant as rejected. Use <span style={{ color: T.pink }}>{`{name}`}</span> to insert the applicant name. Subject is always “Laminar Careers”.
+            Sent when you mark an applicant as <span style={{ color: T.pink }}>Contacted</span>. Copy lives in{" "}
+            <code style={{ color: T.mutedL }}>editable_text_content.json</code> → <code style={{ color: T.mutedL }}>emails.contact</code>. Placeholders:{" "}
+            <span style={{ color: T.pink }}>{`{name}`}</span>, <span style={{ color: T.pink }}>{`{job_title}`}</span>,{" "}
+            <span style={{ color: T.pink }}>{`{booking_link}`}</span>.
+          </div>
+          <div
+            style={{
+              background: "#141414",
+              border: `1px solid ${T.border}`,
+              borderRadius: 12,
+              padding: "12px 14px",
+              fontFamily: "ui-monospace, monospace",
+              fontSize: 12,
+              color: T.mutedL,
+              whiteSpace: "pre-wrap",
+              lineHeight: 1.55,
+            }}
+          >
+            <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 11, color: T.muted, marginBottom: 8 }}>
+              Subject: {contactTpl.subject || "—"}
+            </div>
+            {contactTpl.body || "—"}
+          </div>
+        </div>
+
+        {/* Rejection email — per job; default from editable_text_content.json */}
+        <div style={{ marginBottom: 22 }}>
+          <div style={{ fontFamily: "'Afacad Flux',sans-serif", fontWeight: 600, fontSize: 16, color: T.white, marginBottom: 10 }}>
+            Rejection email (this position)
+          </div>
+          <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.muted, marginBottom: 10, lineHeight: 1.6 }}>
+            Stored on this job. Default text comes from <code style={{ color: T.mutedL }}>emails.rejection</code> in{" "}
+            <code style={{ color: T.mutedL }}>editable_text_content.json</code>. Use <span style={{ color: T.pink }}>{`{name}`}</span> for the applicant
+            name. Subject is always “Laminar Careers”. Clear the field and save to rely on the global default from JSON.
           </div>
           <Input
             label=""
@@ -165,6 +226,16 @@ export default function JobFormModal({ initial, onClose, onSave }) {
             required={false}
             placeholder={"e.g.\nStrong communication with clients\nPayments experience (issuer/acquirer)\nComfortable owning ambiguous work"}
           />
+          {aiLines.length > 0 && (
+            <div style={{ marginTop: 12 }}>
+              <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 11, color: T.muted, marginBottom: 6 }}>Preview (as bullet list for the model)</div>
+              <ul style={{ margin: 0, paddingLeft: 18, fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.mutedL, lineHeight: 1.55 }}>
+                {aiLines.map((line, idx) => (
+                  <li key={idx}>{line}</li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
 
         {/* Questions */}

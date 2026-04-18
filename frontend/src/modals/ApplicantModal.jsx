@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { T, STATUS_COLORS } from "../lib/theme";
 import { computeScore, mustScore } from "../lib/scoring";
 import { StatusBadge } from "../ui";
@@ -9,15 +9,6 @@ export default function ApplicantModal({ applicant, job, onClose, onStatusChange
   const [rejectSending, setRejectSending] = useState(false);
   const [aiRefreshing, setAiRefreshing] = useState(false);
   const ai = applicant.aiAssessment || null;
-  const defaultRejectMessage = useMemo(() => {
-    const name = applicant?.name || "{name}";
-    return (
-      `Hi ${name},\n\n` +
-      "Thank you for applying. After reviewing your application, we will not be moving forward at this time.\n\n" +
-      "We appreciate your interest and encourage you to apply for future openings.\n\n" +
-      "Best regards,\nLaminar Careers"
-    );
-  }, [applicant?.name]);
 
   async function downloadCv() {
     const res = await fetch(`/api/applicants/${applicant.id}/cv`, {
