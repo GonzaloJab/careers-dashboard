@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiJson, getRecruiterPassword, recruiterAuthHeader, setRecruiterPassword } from "../lib/api";
+import { mapApplicantFromApi } from "../lib/applicantMap";
 import { INIT_JOBS } from "../data/staticData";
 import Dashboard from "../features/Dashboard";
 
@@ -14,23 +15,7 @@ export default function RecruiterPage() {
 
   async function loadApplicants(header) {
     const data = await apiJson("/applicants", { headers: { Authorization: header } });
-    setApps(
-      (data || []).map((a) => ({
-        id: a.id,
-        jobId: a.job_id,
-        name: a.name || "—",
-        email: a.email || "",
-        linkedin: a.linkedin || "",
-        status: a.status || "new",
-        date: (a.applied_at || "").slice(0, 10) || "",
-        answers: a.answers || {},
-        parsedCv: a.parsed_cv || null,
-        cvPath: a.cv_path || "",
-        aiStatus: a.ai_status || "waiting",
-        aiScore: typeof a.ai_score === "number" ? a.ai_score : a.ai_score ?? null,
-        aiAssessment: a.ai_assessment || null,
-      }))
-    );
+    setApps((data || []).map(mapApplicantFromApi));
     return data;
   }
 

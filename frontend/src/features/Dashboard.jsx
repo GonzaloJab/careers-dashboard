@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { JOB_STATUS_COLORS, STATUS_COLORS, T } from "../lib/theme";
 import { apiJson } from "../lib/api";
+import { mapApplicantFromApi } from "../lib/applicantMap";
 import { computeScore, mustScore } from "../lib/scoring";
 import { TEAMS } from "../data/staticData";
 import Logo from "../components/Logo";
@@ -106,14 +107,37 @@ export default function Dashboard({ jobs, setJobs, applicants: initApps, onBack,
           : a
       )
     );
-    if (selApp?.id === appId) {
-      setSelApp((p) => ({
-        ...p,
-        aiStatus: next,
-        aiScore: null,
-        aiAssessment: null,
-      }));
+    setSelApp((p) =>
+      p?.id === appId
+        ? {
+            ...p,
+            aiStatus: next,
+            aiScore: null,
+            aiAssessment: null,
+          }
+        : p
+    );
+
+    // Assessment runs in a background task; POST returns before the LLM finishes. Poll until DB updates.
+    if (resp?.queued === false) {
+      return resp;
     }
+
+    const deadline = Date.now() + 120000;
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 1300));
+      const data = await apiJson("/applicants", { headers: { Authorization: authHeader } });
+      const row = (data || []).find((x) => x.id === appId);
+      if (!row) break;
+      const st = row.ai_status || "waiting";
+      const mapped = mapApplicantFromApi(row);
+      setApps((p) => (p || []).map((a) => (a.id === appId ? mapped : a)));
+      setSelApp((p) => (p?.id === appId ? mapped : p));
+      if (st !== "waiting") {
+        return { ...resp, ai_status: st };
+      }
+    }
+
     return resp;
   }
 
