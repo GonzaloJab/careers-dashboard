@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { apiJson } from "../lib/api";
 import { T } from "../lib/theme";
 import { JOB_STATUSES, LOCS, REMOTES, SENS, TEAMS, TYPES } from "../data/staticData";
 import { ButtonPink, Input, SelectField } from "../ui";
@@ -10,6 +11,11 @@ const FALLBACK_REJECTION_BODY =
 function defaultRejectionBody() {
   const b = COPY.emails?.rejection?.body;
   return (typeof b === "string" && b.trim()) ? b.trim() : FALLBACK_REJECTION_BODY;
+}
+
+function defaultRejectionSubject() {
+  const s = COPY.emails?.rejection?.subject;
+  return (typeof s === "string" && s.trim()) ? s.trim() : "Laminar Careers";
 }
 
 function defaultContactSubject() {
@@ -26,18 +32,25 @@ function defaultContactBody() {
 function jobToFormState(row) {
   if (!row) return null;
   const storedRej = row.rejection_template != null ? String(row.rejection_template).trim() : "";
+  const rs = row.rejection_email_subject != null ? String(row.rejection_email_subject).trim() : "";
   const cs = row.contact_email_subject != null ? String(row.contact_email_subject).trim() : "";
   const cb = row.contact_email_body != null ? String(row.contact_email_body).trim() : "";
   return {
     ...row,
     contact_email_subject: cs || defaultContactSubject(),
     contact_email_body: cb || defaultContactBody(),
+    rejection_email_subject: rs || defaultRejectionSubject(),
     rejection_template: storedRej || defaultRejectionBody(),
     ai_requirements: row.ai_requirements != null ? String(row.ai_requirements) : "",
+    recruiter_profile_id:
+      row.recruiter_profile_id != null && row.recruiter_profile_id !== ""
+        ? Number(row.recruiter_profile_id)
+        : null,
   };
 }
 
-export default function JobFormModal({ initial, onClose, onSave }) {
+export default function JobFormModal({ initial, onClose, onSave, authHeader }) {
+  const [profiles, setProfiles] = useState([]);
   const blank = useMemo(
     () => ({
       title: "",
@@ -51,13 +64,30 @@ export default function JobFormModal({ initial, onClose, onSave }) {
       questions: [],
       criteria: [],
       ai_requirements: "",
+      rejection_email_subject: defaultRejectionSubject(),
       rejection_template: defaultRejectionBody(),
       contact_email_subject: defaultContactSubject(),
       contact_email_body: defaultContactBody(),
+      recruiter_profile_id: null,
     }),
     []
   );
   const [form, setForm] = useState(() => (initial ? jobToFormState(initial) : { ...blank }));
+
+  useEffect(() => {
+    if (!authHeader) return;
+    let mounted = true;
+    apiJson("/recruiter-profiles", { headers: { Authorization: authHeader } })
+      .then((data) => {
+        if (mounted) setProfiles(data?.profiles || []);
+      })
+      .catch(() => {
+        if (mounted) setProfiles([]);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [authHeader]);
   const [qForm, setQF] = useState({ label: "", type: "select", options: "", isMust: false });
   const [cForm, setCF] = useState({ questionId: "", label: "", matchValues: "" });
 
@@ -177,6 +207,44 @@ export default function JobFormModal({ initial, onClose, onSave }) {
           </div>
         </div>
 
+        {authHeader ? (
+          <div style={{ marginBottom: 22 }}>
+            <div style={{ fontFamily: "'Afacad Flux',sans-serif", fontWeight: 600, fontSize: 16, color: T.white, marginBottom: 8 }}>
+              Contact person (profile)
+            </div>
+            <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.muted, marginBottom: 10, lineHeight: 1.6 }}>
+              Optional. Uses this profile’s meeting link and Microsoft Graph app for <span style={{ color: T.pink }}>Contact</span> and{" "}
+              <span style={{ color: T.pink }}>Rejection</span> emails. Create profiles under <strong style={{ color: T.mutedL }}>Settings</strong> →
+              Recruiter profiles. If unset, global Settings (meeting link + Microsoft) apply.
+            </div>
+            <select
+              value={form.recruiter_profile_id != null && form.recruiter_profile_id !== "" ? String(form.recruiter_profile_id) : ""}
+              onChange={(e) => {
+                const v = e.target.value;
+                set("recruiter_profile_id", v === "" ? null : Number(v));
+              }}
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: 9,
+                background: "#181818",
+                border: `1px solid ${T.border}`,
+                color: form.recruiter_profile_id != null && form.recruiter_profile_id !== "" ? T.white : T.muted,
+                fontFamily: "'DM Sans',sans-serif",
+                fontSize: 14,
+                outline: "none",
+              }}
+            >
+              <option value="">Global defaults (Settings)</option>
+              {profiles.map((p) => (
+                <option key={p.id} value={String(p.id)}>
+                  {p.display_name}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
+
         {/* Contact mail — stored on this job; defaults from editable_text_content.json */}
         <div style={{ marginBottom: 22 }}>
           <div style={{ fontFamily: "'Afacad Flux',sans-serif", fontWeight: 600, fontSize: 16, color: T.white, marginBottom: 8 }}>
@@ -211,18 +279,26 @@ export default function JobFormModal({ initial, onClose, onSave }) {
             Rejection email
           </div>
           <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.muted, marginBottom: 12, lineHeight: 1.6 }}>
-            Saved on this position. Use <span style={{ color: T.pink }}>{`{name}`}</span> for the applicant. Outbound subject is “Laminar Careers”. Default
-            copy in <code style={{ color: T.mutedL }}>emails.rejection</code> — clear and save to use that default.
+            Saved on this position. Subject and body support <span style={{ color: T.pink }}>{`{name}`}</span>. Defaults come from{" "}
+            <code style={{ color: T.mutedL }}>emails.rejection</code> in JSON — clear subject or body and save to use those defaults.
           </div>
-          <Input
-            label=""
-            value={form.rejection_template || ""}
-            onChange={(e) => set("rejection_template", e.target.value)}
-            multiline
-            rows={12}
-            required={false}
-            style={{ ...mailFieldStyle, border: `1px solid ${T.border}`, minHeight: 160 }}
-          />
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <Input
+              label="Subject"
+              value={form.rejection_email_subject || ""}
+              onChange={(e) => set("rejection_email_subject", e.target.value)}
+              style={{ ...mailFieldStyle, border: `1px solid ${T.border}`, minHeight: 44 }}
+            />
+            <Input
+              label="Body"
+              value={form.rejection_template || ""}
+              onChange={(e) => set("rejection_template", e.target.value)}
+              multiline
+              rows={12}
+              required={false}
+              style={{ ...mailFieldStyle, border: `1px solid ${T.border}`, minHeight: 160 }}
+            />
+          </div>
         </div>
 
         {/* AI assessment */}
@@ -231,7 +307,8 @@ export default function JobFormModal({ initial, onClose, onSave }) {
             AI assessment
           </div>
           <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.muted, marginBottom: 12, lineHeight: 1.6 }}>
-            One guideline per line (same monospace box). Used for the 0–5 AI score and pros/cons. Does not block applicants.
+            One guideline per line (same monospace box). Used for the 0–5 AI score and pros/cons. If you leave this empty, AI assessment is{" "}
+            <span style={{ color: T.pink }}>disabled</span> for this job (applicants show “AI off”). Does not block applications.
           </div>
           <Input
             label=""

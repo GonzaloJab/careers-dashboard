@@ -74,10 +74,24 @@ export default function Dashboard({ jobs, setJobs, applicants: initApps, onBack,
   }
 
   async function refreshApplicantAI(appId) {
-    const resp = await apiJson(`/applicants/${appId}/ai/refresh`, {
-      method: "POST",
-      headers: { Authorization: authHeader },
-    });
+    let resp;
+    try {
+      resp = await apiJson(`/applicants/${appId}/ai/refresh`, {
+        method: "POST",
+        headers: { Authorization: authHeader },
+      });
+    } catch (e) {
+      if (e?.status === 400) {
+        alert(
+          e?.message?.includes("no AI assessment") || e?.message?.includes("AI assessment requirements")
+            ? e.message
+            : "Cannot run AI: add at least one line under AI assessment on the job, then try again."
+        );
+      } else {
+        alert(e?.message || "Could not re-run AI assessment.");
+      }
+      return null;
+    }
 
     const next = resp?.ai_status || "waiting";
     setApps((p) =>
@@ -207,9 +221,10 @@ export default function Dashboard({ jobs, setJobs, applicants: initApps, onBack,
 
   return (
     <div style={{ minHeight: "100vh", background: "#0e0e0e" }}>
-      {showAdd && <JobFormModal onClose={() => setShowAdd(false)} onSave={addJob} />}
+      {showAdd && <JobFormModal authHeader={authHeader} onClose={() => setShowAdd(false)} onSave={addJob} />}
       {editJob && (
         <JobFormModal
+          authHeader={authHeader}
           initial={editJob}
           onClose={() => setEditJob(null)}
           onSave={(f) => {
@@ -508,6 +523,8 @@ export default function Dashboard({ jobs, setJobs, applicants: initApps, onBack,
                         <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: "#ff9944" }}>non‑text PDF</span>
                       ) : a.aiStatus === "failed" ? (
                         <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: "#ff6060" }}>AI failed</span>
+                      ) : a.aiStatus === "no_req" ? (
+                        <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: "#ff9944" }}>AI off</span>
                       ) : (
                         <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.muted }}>waiting</span>
                       )}
@@ -641,6 +658,8 @@ export default function Dashboard({ jobs, setJobs, applicants: initApps, onBack,
                     <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: "#ff9944" }}>AI skipped</span>
                   ) : a.aiStatus === "failed" ? (
                     <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: "#ff6060" }}>AI failed</span>
+                  ) : a.aiStatus === "no_req" ? (
+                    <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: "#ff9944" }}>AI off</span>
                   ) : (
                     <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.muted }}>AI waiting</span>
                   )}

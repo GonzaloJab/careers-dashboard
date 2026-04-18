@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { apiJson } from "../lib/api";
 import { T } from "../lib/theme";
 import Input from "../ui/Input";
+import RecruiterProfilesPanel from "./RecruiterProfilesPanel.jsx";
 
 const WARN =
   "Before changing these settings, check with Gonzalo Jabat. Changes can impact email delivery, AI assessment, cost, and overall performance.";
@@ -125,6 +126,8 @@ export default function SettingsModal({ authHeader, onClose }) {
             <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.muted }}>Loading…</div>
           ) : (
             <>
+              <RecruiterProfilesPanel authHeader={authHeader} />
+
               {/* OpenRouter */}
               <div style={{ background: "#171717", border: `1px solid ${T.border}`, borderRadius: 12, padding: "12px 14px" }}>
                 <div style={{ fontFamily: "'Afacad Flux',sans-serif", fontWeight: 800, fontSize: 14, color: T.white, marginBottom: 6 }}>OpenRouter</div>

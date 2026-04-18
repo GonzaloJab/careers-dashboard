@@ -3,12 +3,18 @@ import { T, STATUS_COLORS } from "../lib/theme";
 import { computeScore, mustScore } from "../lib/scoring";
 import { StatusBadge } from "../ui";
 
+function jobHasAiRequirements(job) {
+  if (!job?.ai_requirements) return false;
+  return job.ai_requirements.split("\n").some((l) => l.trim().length > 0);
+}
+
 export default function ApplicantModal({ applicant, job, onClose, onStatusChange, authHeader, onAIRefresh }) {
-  const score = computeScore(job, applicant.answers);
-  const ms = mustScore(job, applicant.answers);
+  const score = job ? computeScore(job, applicant.answers) : null;
+  const ms = job ? mustScore(job, applicant.answers) : null;
   const [rejectSending, setRejectSending] = useState(false);
   const [aiRefreshing, setAiRefreshing] = useState(false);
   const ai = applicant.aiAssessment || null;
+  const canRunAi = jobHasAiRequirements(job);
 
   async function downloadCv() {
     const res = await fetch(`/api/applicants/${applicant.id}/cv`, {
@@ -80,7 +86,7 @@ export default function ApplicantModal({ applicant, job, onClose, onStatusChange
           {applicant.name}
         </div>
         <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 13, color: T.pink, marginTop: 2 }}>
-          {job.title} – {job.team}
+          {job?.title} – {job?.team}
         </div>
 
         <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap", alignItems: "center" }}>
@@ -107,6 +113,8 @@ export default function ApplicantModal({ applicant, job, onClose, onStatusChange
             <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: "#ff9944" }}>AI skipped (non‑text PDF)</span>
           ) : applicant.aiStatus === "failed" ? (
             <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: "#ff6060" }}>AI failed</span>
+          ) : applicant.aiStatus === "no_req" ? (
+            <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: "#ff9944" }}>AI off (no job requirements)</span>
           ) : (
             <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.muted }}>AI waiting</span>
           )}
@@ -150,14 +158,16 @@ export default function ApplicantModal({ applicant, job, onClose, onStatusChange
         <div style={{ marginTop: 18, background: "#171717", border: `1px solid ${T.border}`, borderRadius: 12, padding: "12px 14px" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
             <div style={{ fontFamily: "'Afacad Flux',sans-serif", fontWeight: 650, fontSize: 14, color: T.white }}>AI assessment</div>
-            <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: applicant.aiStatus === "done" ? T.mutedL : applicant.aiStatus === "no_text" ? "#ff9944" : applicant.aiStatus === "failed" ? "#ff6060" : T.muted }}>
+            <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: applicant.aiStatus === "done" ? T.mutedL : applicant.aiStatus === "no_text" ? "#ff9944" : applicant.aiStatus === "failed" ? "#ff6060" : applicant.aiStatus === "no_req" ? "#ff9944" : T.muted }}>
               {applicant.aiStatus === "done"
                 ? "done"
                 : applicant.aiStatus === "no_text"
                   ? "skipped"
                   : applicant.aiStatus === "failed"
                     ? "failed"
-                    : "waiting"}
+                    : applicant.aiStatus === "no_req"
+                      ? "no requirements"
+                      : "waiting"}
             </div>
           </div>
           {applicant.aiStatus !== "done" ? (
@@ -166,7 +176,11 @@ export default function ApplicantModal({ applicant, job, onClose, onStatusChange
                 ? "CV appears to be a non-text (scanned) PDF, so AI assessment was skipped. You can still work with the applicant normally."
                 : applicant.aiStatus === "failed"
                   ? "AI assessment failed. The applicant workflow can continue, but AI score/summary is unavailable."
-                  : "Assessment is queued. You can still work with the applicant normally."}
+                  : !canRunAi
+                    ? "This job has no AI assessment lines yet (Edit position → AI assessment). Add at least one guideline per line to enable AI for this role."
+                    : applicant.aiStatus === "no_req"
+                      ? "AI was not run because the job had no assessment lines when this person applied. With requirements saved now, you can run AI using the button below."
+                      : "Assessment is queued. You can still work with the applicant normally."}
             </div>
           ) : ai ? (
             <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 10 }}>
@@ -209,13 +223,15 @@ export default function ApplicantModal({ applicant, job, onClose, onStatusChange
           <div style={{ marginTop: 12, display: "flex", justifyContent: "flex-end" }}>
             {typeof onAIRefresh === "function" ? (
               <button
-                disabled={aiRefreshing || applicant.aiStatus === "waiting"}
+                disabled={aiRefreshing || applicant.aiStatus === "waiting" || !canRunAi}
+                title={!canRunAi ? "Add AI assessment lines on the job first" : undefined}
                 onClick={async () => {
                   try {
                     setAiRefreshing(true);
-                    await onAIRefresh(applicant.id);
+                    const r = await onAIRefresh(applicant.id);
+                    if (r == null) return;
                   } catch (e) {
-                    alert("Could not re-run AI assessment.");
+                    alert(e?.message || "Could not re-run AI assessment.");
                   } finally {
                     setAiRefreshing(false);
                   }
@@ -226,24 +242,27 @@ export default function ApplicantModal({ applicant, job, onClose, onStatusChange
                   color: applicant.aiStatus === "done" ? T.pink : T.mutedL,
                   padding: "8px 12px",
                   borderRadius: 10,
-                  cursor: aiRefreshing || applicant.aiStatus === "waiting" ? "not-allowed" : "pointer",
+                  cursor: aiRefreshing || applicant.aiStatus === "waiting" || !canRunAi ? "not-allowed" : "pointer",
                   fontFamily: "'DM Sans',sans-serif",
                   fontSize: 12,
                   fontWeight: 700,
+                  opacity: !canRunAi ? 0.55 : 1,
                 }}
               >
                 {aiRefreshing
                   ? "Re-running…"
                   : applicant.aiStatus === "waiting"
                     ? "AI queued"
-                    : "Re-run AI"}
+                    : !canRunAi
+                      ? "AI disabled"
+                      : "Re-run AI"}
               </button>
             ) : null}
           </div>
         </div>
 
         <div style={{ marginTop: 22, display: "flex", flexDirection: "column", gap: 14 }}>
-          {job.questions.map((q) => {
+          {(job?.questions || []).map((q) => {
             const a = applicant.answers[q.id];
             const val = Array.isArray(a) ? a.join(", ") : a;
             return (

@@ -54,6 +54,8 @@ MS_CLIENT_SECRET   = os.getenv("MS_CLIENT_SECRET", "")
 MS_MAIL_SENDER     = os.getenv("MS_MAIL_SENDER", MAIL_FROM)  # user principal name
 
 _graph_token_cache: Dict[str, Any] = {"access_token": None, "expires_at": 0}
+# Per recruiter profile (separate Azure app registrations): profile_id -> {access_token, expires_at}
+_graph_token_cache_profile: Dict[int, Dict[str, Any]] = {}
 
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
@@ -143,6 +145,26 @@ def init_db():
         db.execute("ALTER TABLE jobs ADD COLUMN contact_email_subject TEXT DEFAULT ''")
     if "contact_email_body" not in job_cols:
         db.execute("ALTER TABLE jobs ADD COLUMN contact_email_body TEXT DEFAULT ''")
+    if "rejection_email_subject" not in job_cols:
+        db.execute("ALTER TABLE jobs ADD COLUMN rejection_email_subject TEXT DEFAULT ''")
+
+    db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS recruiter_profiles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            display_name TEXT NOT NULL,
+            booking_url TEXT DEFAULT '',
+            ms_tenant_id TEXT DEFAULT '',
+            ms_client_id TEXT DEFAULT '',
+            ms_client_secret TEXT DEFAULT '',
+            ms_mail_sender TEXT DEFAULT '',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    job_cols = {r["name"] for r in db.execute("PRAGMA table_info(jobs)").fetchall()}
+    if "recruiter_profile_id" not in job_cols:
+        db.execute("ALTER TABLE jobs ADD COLUMN recruiter_profile_id INTEGER")
 
     app_cols = {r["name"] for r in db.execute("PRAGMA table_info(applicants)").fetchall()}
     if "first_name" not in app_cols:
@@ -233,6 +255,47 @@ def _graph_get_token() -> str:
     _graph_token_cache["expires_at"] = now + max(expires_in, 0)
     return str(access_token)
 
+
+def _graph_get_token_for_profile(
+    profile_id: int, ms_tenant: str, ms_client: str, ms_secret: str
+) -> str:
+    now = int(time.time())
+    c = _graph_token_cache_profile.get(profile_id)
+    if c:
+        tok = c.get("access_token")
+        exp = int(c.get("expires_at") or 0)
+        if tok and exp - 60 > now:
+            return str(tok)
+
+    if not (ms_tenant and ms_client and ms_secret):
+        raise RuntimeError("Microsoft Graph is not configured for this profile")
+
+    url = f"https://login.microsoftonline.com/{ms_tenant}/oauth2/v2.0/token"
+    data = {
+        "client_id": ms_client,
+        "client_secret": ms_secret,
+        "grant_type": "client_credentials",
+        "scope": "https://graph.microsoft.com/.default",
+    }
+    r = requests.post(url, data=data, timeout=20)
+    if r.status_code != 200:
+        raise RuntimeError(f"Token request failed: {r.status_code} {r.text}")
+    j = r.json()
+    access_token = j.get("access_token")
+    expires_in = int(j.get("expires_in") or 0)
+    if not access_token:
+        raise RuntimeError("Token response missing access_token")
+    _graph_token_cache_profile[profile_id] = {
+        "access_token": access_token,
+        "expires_at": now + max(expires_in, 0),
+    }
+    return str(access_token)
+
+
+def _invalidate_profile_graph_cache(profile_id: int) -> None:
+    _graph_token_cache_profile.pop(int(profile_id), None)
+
+
 def send_email_graph(to_email: str, subject: str, body: str):
     token = _graph_get_token()
     ms_sender = get_config("MS_MAIL_SENDER", MS_MAIL_SENDER)
@@ -250,7 +313,46 @@ def send_email_graph(to_email: str, subject: str, body: str):
     if r.status_code not in (202, 200):
         raise RuntimeError(f"Graph sendMail failed: {r.status_code} {r.text}")
 
-def send_email(to_email: str, subject: str, body: str):
+
+def send_email_graph_with_profile(
+    profile_id: int,
+    to_email: str,
+    subject: str,
+    body: str,
+    ms_tenant: str,
+    ms_client: str,
+    ms_secret: str,
+    ms_sender: str,
+):
+    token = _graph_get_token_for_profile(profile_id, ms_tenant, ms_client, ms_secret)
+    url = f"https://graph.microsoft.com/v1.0/users/{ms_sender}/sendMail"
+    payload = {
+        "message": {
+            "subject": subject,
+            "body": {"contentType": "Text", "content": body},
+            "toRecipients": [{"emailAddress": {"address": to_email}}],
+        },
+        "saveToSentItems": True,
+    }
+    r = requests.post(url, headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}, json=payload, timeout=20)
+    if r.status_code not in (202, 200):
+        raise RuntimeError(f"Graph sendMail failed: {r.status_code} {r.text}")
+
+
+def send_email(to_email: str, subject: str, body: str, mail_profile: Optional[Dict[str, Any]] = None):
+    """
+    Send mail. If mail_profile is set and has full Graph fields, use that app registration.
+    Otherwise use global Graph (settings/env) or SMTP.
+    """
+    if mail_profile:
+        mt = (mail_profile.get("ms_tenant_id") or "").strip()
+        mc = (mail_profile.get("ms_client_id") or "").strip()
+        ms = (mail_profile.get("ms_client_secret") or "").strip()
+        mm = (mail_profile.get("ms_mail_sender") or "").strip()
+        pid = mail_profile.get("id")
+        if mt and mc and ms and mm and pid is not None:
+            return send_email_graph_with_profile(int(pid), to_email, subject, body, mt, mc, ms, mm)
+
     # Prefer Graph if configured (M365 tenants often disable SMTP AUTH).
     ms_tenant = get_config("MS_TENANT_ID", MS_TENANT_ID)
     ms_client = get_config("MS_CLIENT_ID", MS_CLIENT_ID)
@@ -312,6 +414,19 @@ def default_rejection_body() -> str:
         "We appreciate your interest and encourage you to apply for future openings.\n\n"
         "Best regards,\nLaminar Careers"
     )
+
+
+def default_rejection_subject() -> str:
+    """Subject line when a job has no rejection_email_subject; from JSON or fallback."""
+    cp = load_copy()
+    s = (((cp.get("emails") or {}).get("rejection") or {}).get("subject")) if isinstance(cp, dict) else None
+    if isinstance(s, str) and s.strip():
+        return s.strip()
+    return "Laminar Careers"
+
+
+def _has_ai_requirements(text: Optional[str]) -> bool:
+    return any(ln.strip() for ln in (text or "").splitlines())
 
 def _tmpl(s: str, **kv) -> str:
     out = s or ""
@@ -424,6 +539,117 @@ def put_settings(body: dict, _=Depends(require_auth)):
 
     return {"ok": True}
 
+
+def _parse_optional_profile_id(v: Any) -> Optional[int]:
+    if v is None or v == "":
+        return None
+    try:
+        i = int(v)
+        return i if i > 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _recruiter_profile_to_list_item(row: sqlite3.Row) -> dict:
+    d = dict(row)
+    sec = (d.get("ms_client_secret") or "").strip()
+    d["has_client_secret"] = bool(sec)
+    del d["ms_client_secret"]
+    return d
+
+
+@app.get("/recruiter-profiles")
+def list_recruiter_profiles(_=Depends(require_auth)):
+    db = get_db()
+    rows = db.execute("SELECT * FROM recruiter_profiles ORDER BY display_name COLLATE NOCASE").fetchall()
+    db.close()
+    return {"profiles": [_recruiter_profile_to_list_item(r) for r in rows]}
+
+
+@app.post("/recruiter-profiles")
+def create_recruiter_profile(body: dict, _=Depends(require_auth)):
+    name = (body.get("display_name") or "").strip()
+    if not name:
+        raise HTTPException(400, detail="display_name is required")
+    db = get_db()
+    cur = db.execute(
+        """
+        INSERT INTO recruiter_profiles (display_name, booking_url, ms_tenant_id, ms_client_id, ms_client_secret, ms_mail_sender)
+        VALUES (?,?,?,?,?,?)
+        """,
+        (
+            name,
+            (body.get("booking_url") or "").strip(),
+            (body.get("ms_tenant_id") or "").strip(),
+            (body.get("ms_client_id") or "").strip(),
+            (body.get("ms_client_secret") or "").strip(),
+            (body.get("ms_mail_sender") or "").strip(),
+        ),
+    )
+    db.commit()
+    new_id = cur.lastrowid
+    db.close()
+    return {"id": new_id}
+
+
+@app.patch("/recruiter-profiles/{profile_id}")
+def update_recruiter_profile(profile_id: int, body: dict, _=Depends(require_auth)):
+    db = get_db()
+    row = db.execute("SELECT * FROM recruiter_profiles WHERE id=?", (profile_id,)).fetchone()
+    if not row:
+        db.close()
+        raise HTTPException(404, detail="Profile not found")
+    updates = []
+    vals: List[Any] = []
+    if "display_name" in body:
+        dn = (body.get("display_name") or "").strip()
+        if not dn:
+            db.close()
+            raise HTTPException(400, detail="display_name cannot be empty")
+        updates.append("display_name=?")
+        vals.append(dn)
+    for key in ("booking_url", "ms_tenant_id", "ms_client_id", "ms_mail_sender"):
+        if key in body:
+            updates.append(f"{key}=?")
+            vals.append((body.get(key) or "").strip())
+    if "ms_client_secret" in body:
+        sec = (body.get("ms_client_secret") or "").strip()
+        if sec:
+            updates.append("ms_client_secret=?")
+            vals.append(sec)
+    if not updates:
+        db.close()
+        return {"ok": True}
+    vals.append(profile_id)
+    db.execute(f"UPDATE recruiter_profiles SET {', '.join(updates)} WHERE id=?", tuple(vals))
+    db.commit()
+    db.close()
+    _invalidate_profile_graph_cache(profile_id)
+    return {"ok": True}
+
+
+@app.delete("/recruiter-profiles/{profile_id}")
+def delete_recruiter_profile(profile_id: int, _=Depends(require_auth)):
+    db = get_db()
+    n = int(
+        db.execute(
+            "SELECT COUNT(*) FROM jobs WHERE recruiter_profile_id=?",
+            (profile_id,),
+        ).fetchone()[0]
+    )
+    if n:
+        db.close()
+        raise HTTPException(
+            status_code=409,
+            detail="This profile is assigned to one or more jobs. Clear the profile on those jobs first.",
+        )
+    db.execute("DELETE FROM recruiter_profiles WHERE id=?", (profile_id,))
+    db.commit()
+    db.close()
+    _invalidate_profile_graph_cache(profile_id)
+    return {"ok": True}
+
+
 # ── JSON helpers ───────────────────────────────────────────────
 def _json_loads_or(value: Optional[str], fallback):
     if value is None:
@@ -440,8 +666,11 @@ def _job_row_to_api(row: sqlite3.Row) -> dict:
     d["criteria"] = _json_loads_or(d.get("criteria"), [])
     d["ai_requirements"] = d.get("ai_requirements") or ""
     d["rejection_template"] = (d.get("rejection_template") or "").strip()
+    d["rejection_email_subject"] = (d.get("rejection_email_subject") or "").strip()
     d["contact_email_subject"] = (d.get("contact_email_subject") or "").strip()
     d["contact_email_body"] = (d.get("contact_email_body") or "").strip()
+    rp = d.get("recruiter_profile_id")
+    d["recruiter_profile_id"] = int(rp) if rp is not None else None
     return d
 
 
@@ -523,6 +752,16 @@ async def assess_applicant_async(applicant_id: int, job_id: int, cv_text: str):
         job = _job_row_to_api(job_row)
         ai_req = job.get("ai_requirements") or ""
         db.close()
+
+        if not _has_ai_requirements(ai_req):
+            dbx = get_db()
+            dbx.execute(
+                "UPDATE applicants SET ai_status=?, ai_score=?, ai_assessment=? WHERE id=?",
+                ("no_req", None, None, applicant_id),
+            )
+            dbx.commit()
+            dbx.close()
+            return
 
         model = get_config("OPENROUTER_MODEL", OPENROUTER_MODEL) or OPENROUTER_MODEL
         print(
@@ -679,8 +918,8 @@ def create_job(job: dict, _=Depends(require_auth)):
     public_id = job.get("public_id") or new_public_id()
     db = get_db()
     cur = db.execute("""
-        INSERT INTO jobs (public_id,title,team,location,remote,seniority,type,description,status,questions,criteria,ai_requirements,rejection_template,contact_email_subject,contact_email_body)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        INSERT INTO jobs (public_id,title,team,location,remote,seniority,type,description,status,questions,criteria,ai_requirements,rejection_template,rejection_email_subject,contact_email_subject,contact_email_body,recruiter_profile_id)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     """, (
         public_id,
         job.get("title"), job.get("team"), job.get("location"),
@@ -690,8 +929,10 @@ def create_job(job: dict, _=Depends(require_auth)):
         json.dumps(job.get("criteria",[])),
         (job.get("ai_requirements") or ""),
         job.get("rejection_template","") or "",
+        (job.get("rejection_email_subject") or ""),
         (job.get("contact_email_subject") or ""),
         (job.get("contact_email_body") or ""),
+        _parse_optional_profile_id(job.get("recruiter_profile_id")),
     ))
     db.commit()
     new_id = cur.lastrowid
@@ -704,7 +945,7 @@ def update_job(job_id: int, job: dict, _=Depends(require_auth)):
     db = get_db()
     db.execute("""
         UPDATE jobs SET title=?,team=?,location=?,remote=?,seniority=?,
-        type=?,description=?,status=?,questions=?,criteria=?,ai_requirements=?,rejection_template=?,contact_email_subject=?,contact_email_body=? WHERE id=?
+        type=?,description=?,status=?,questions=?,criteria=?,ai_requirements=?,rejection_template=?,rejection_email_subject=?,contact_email_subject=?,contact_email_body=?,recruiter_profile_id=? WHERE id=?
     """, (
         job.get("title"), job.get("team"), job.get("location"),
         job.get("remote"), job.get("seniority"), job.get("type"),
@@ -713,8 +954,10 @@ def update_job(job_id: int, job: dict, _=Depends(require_auth)):
         json.dumps(job.get("criteria",[])),
         (job.get("ai_requirements") or ""),
         job.get("rejection_template","") or "",
+        (job.get("rejection_email_subject") or ""),
         (job.get("contact_email_subject") or ""),
         (job.get("contact_email_body") or ""),
+        _parse_optional_profile_id(job.get("recruiter_profile_id")),
         job_id,
     ))
     db.commit()
@@ -802,16 +1045,27 @@ async def apply(
     # Extract + parse CV in background (best-effort)
     cv_text = extract_cv_text(cv_path)
     if cv_text and cv_text.strip():
-        # Set AI assessment status to waiting right away (non-blocking for recruiter workflow).
+        dbj = get_db()
+        jr = dbj.execute("SELECT ai_requirements FROM jobs WHERE id=?", (job_id,)).fetchone()
+        dbj.close()
+        has_ai_req = _has_ai_requirements(jr["ai_requirements"] if jr else None)
+
         try:
             dbs = get_db()
-            dbs.execute("UPDATE applicants SET ai_status=? WHERE id=?", ("waiting", applicant_id))
+            if has_ai_req:
+                dbs.execute("UPDATE applicants SET ai_status=? WHERE id=?", ("waiting", applicant_id))
+            else:
+                dbs.execute(
+                    "UPDATE applicants SET ai_status=?, ai_score=?, ai_assessment=? WHERE id=?",
+                    ("no_req", None, None, applicant_id),
+                )
             dbs.commit()
             dbs.close()
         except Exception:
             pass
         background_tasks.add_task(parse_cv_async, applicant_id, cv_text)
-        background_tasks.add_task(assess_applicant_async, applicant_id, job_id, cv_text)
+        if has_ai_req:
+            background_tasks.add_task(assess_applicant_async, applicant_id, job_id, cv_text)
     else:
         # Keep applicant usable, but show recruiter that AI was skipped due to non-text PDF.
         try:
@@ -862,27 +1116,43 @@ def update_status(applicant_id: int, body: dict, _=Depends(require_auth)):
     valid = ["new","shortlisted","interview","contacted","rejected"]
     if status not in valid:
         raise HTTPException(400, f"status must be one of {valid}")
-    subject = "Laminar Careers"
 
     db = get_db()
     db.execute("UPDATE applicants SET status=? WHERE id=?", (status, applicant_id))
     row = db.execute("SELECT email, name, job_id FROM applicants WHERE id=?", (applicant_id,)).fetchone()
     job_row = None
     if row and row["job_id"]:
-        job_row = db.execute("SELECT rejection_template FROM jobs WHERE id=?", (row["job_id"],)).fetchone()
+        job_row = db.execute(
+            "SELECT rejection_template, rejection_email_subject, recruiter_profile_id FROM jobs WHERE id=?",
+            (row["job_id"],),
+        ).fetchone()
     db.commit()
     db.close()
 
     mail_sent = None
     mail_error = None
     if status == "rejected" and row and row["email"]:
+        mail_profile: Optional[Dict[str, Any]] = None
+        if job_row and job_row["recruiter_profile_id"]:
+            dbp = get_db()
+            pr = dbp.execute(
+                "SELECT * FROM recruiter_profiles WHERE id=?",
+                (int(job_row["recruiter_profile_id"]),),
+            ).fetchone()
+            dbp.close()
+            if pr:
+                mail_profile = dict(pr)
         name = row["name"] or "there"
         template = (job_row["rejection_template"] if job_row else "") or ""
         if not template.strip():
             template = default_rejection_body()
         message = template.replace("{name}", name)
+        subj_tmpl = (job_row["rejection_email_subject"] or "").strip() if job_row else ""
+        if not subj_tmpl:
+            subj_tmpl = default_rejection_subject()
+        subject = _tmpl(subj_tmpl, name=name, job_title="", booking_link="")
         try:
-            send_email(row["email"], subject, message)
+            send_email(row["email"], subject, message, mail_profile=mail_profile)
             mail_sent = True
         except Exception as e:
             # Status update succeeded; report mail failure to UI.
@@ -901,7 +1171,7 @@ def contact_applicant(applicant_id: int, _=Depends(require_auth)):
     row = db.execute(
         """
         SELECT a.email, a.name, a.first_name, a.job_id, j.title as job_title,
-               j.contact_email_subject, j.contact_email_body
+               j.contact_email_subject, j.contact_email_body, j.recruiter_profile_id
         FROM applicants a
         LEFT JOIN jobs j ON a.job_id = j.id
         WHERE a.id=?
@@ -921,6 +1191,15 @@ def contact_applicant(applicant_id: int, _=Depends(require_auth)):
     if not row["email"]:
         return {"ok": True, "mail_sent": False, "mail_error": "Applicant has no email", "status": "contacted"}
 
+    mail_profile: Optional[Dict[str, Any]] = None
+    pid = row["recruiter_profile_id"]
+    if pid:
+        dbp = get_db()
+        pr = dbp.execute("SELECT * FROM recruiter_profiles WHERE id=?", (int(pid),)).fetchone()
+        dbp.close()
+        if pr:
+            mail_profile = dict(pr)
+
     cp = load_copy()
     default_subj = (
         (((cp.get("emails") or {}).get("contact") or {}).get("subject") if isinstance(cp, dict) else "")
@@ -929,12 +1208,16 @@ def contact_applicant(applicant_id: int, _=Depends(require_auth)):
     job_subj = (row["contact_email_subject"] or "").strip() if row else ""
     job_body = (row["contact_email_body"] or "").strip() if row else ""
 
-    booking = (
-        get_config("CONTACT_BOOKING_URL", "").strip()
-        or get_config("BOOKING_MEETING_LINK", "").strip()
-        or get_config("TEAMS_BOOKING_LINK", "").strip()
-        or CONTACT_BOOKING_URL
-    )
+    booking = ""
+    if mail_profile and (mail_profile.get("booking_url") or "").strip():
+        booking = mail_profile["booking_url"].strip()
+    else:
+        booking = (
+            get_config("CONTACT_BOOKING_URL", "").strip()
+            or get_config("BOOKING_MEETING_LINK", "").strip()
+            or get_config("TEAMS_BOOKING_LINK", "").strip()
+            or CONTACT_BOOKING_URL
+        )
     nm = (row["first_name"] or row["name"] or "there").strip() or "there"
     jt = (row["job_title"] or "").strip() or "the position"
     url = (booking or "").strip() or "(booking link missing)"
@@ -949,7 +1232,7 @@ def contact_applicant(applicant_id: int, _=Depends(require_auth)):
     else:
         body = build_contact_email(nm, jt, booking)
     try:
-        send_email(row["email"], subj, body)
+        send_email(row["email"], subj, body, mail_profile=mail_profile)
         mail_sent = True
     except Exception as e:
         mail_sent = False
@@ -1023,6 +1306,15 @@ async def refresh_ai_for_applicant(
         db2.commit()
         db2.close()
         return {"ok": True, "queued": False, "ai_status": "no_text"}
+
+    db_job = get_db()
+    job_row = db_job.execute("SELECT ai_requirements FROM jobs WHERE id=?", (job_id,)).fetchone()
+    db_job.close()
+    if not _has_ai_requirements(job_row["ai_requirements"] if job_row else None):
+        raise HTTPException(
+            status_code=400,
+            detail="This job has no AI assessment requirements. Add at least one line under AI assessment on the job before running AI.",
+        )
 
     # Mark waiting and clear old output, then queue assessment.
     db3 = get_db()
