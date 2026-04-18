@@ -7,6 +7,8 @@ export default function Input({
   placeholder,
   multiline,
   required,
+  rows = 3,
+  style: styleOverride,
 }) {
   const s = {
     width: "100%",
@@ -19,6 +21,8 @@ export default function Input({
     fontSize: 14,
     outline: "none",
     display: "block",
+    boxSizing: "border-box",
+    ...(styleOverride || {}),
   };
   return (
     <div>
@@ -38,7 +42,7 @@ export default function Input({
       )}
       {multiline ? (
         <textarea
-          rows={3}
+          rows={rows}
           value={value}
           onChange={onChange}
           placeholder={placeholder || ""}

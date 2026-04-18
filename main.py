@@ -139,6 +139,10 @@ def init_db():
         db.execute("ALTER TABLE jobs ADD COLUMN rejection_template TEXT")
     if "ai_requirements" not in job_cols:
         db.execute("ALTER TABLE jobs ADD COLUMN ai_requirements TEXT DEFAULT ''")
+    if "contact_email_subject" not in job_cols:
+        db.execute("ALTER TABLE jobs ADD COLUMN contact_email_subject TEXT DEFAULT ''")
+    if "contact_email_body" not in job_cols:
+        db.execute("ALTER TABLE jobs ADD COLUMN contact_email_body TEXT DEFAULT ''")
 
     app_cols = {r["name"] for r in db.execute("PRAGMA table_info(applicants)").fetchall()}
     if "first_name" not in app_cols:
@@ -436,6 +440,8 @@ def _job_row_to_api(row: sqlite3.Row) -> dict:
     d["criteria"] = _json_loads_or(d.get("criteria"), [])
     d["ai_requirements"] = d.get("ai_requirements") or ""
     d["rejection_template"] = (d.get("rejection_template") or "").strip()
+    d["contact_email_subject"] = (d.get("contact_email_subject") or "").strip()
+    d["contact_email_body"] = (d.get("contact_email_body") or "").strip()
     return d
 
 
@@ -673,8 +679,8 @@ def create_job(job: dict, _=Depends(require_auth)):
     public_id = job.get("public_id") or new_public_id()
     db = get_db()
     cur = db.execute("""
-        INSERT INTO jobs (public_id,title,team,location,remote,seniority,type,description,status,questions,criteria,ai_requirements,rejection_template)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+        INSERT INTO jobs (public_id,title,team,location,remote,seniority,type,description,status,questions,criteria,ai_requirements,rejection_template,contact_email_subject,contact_email_body)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     """, (
         public_id,
         job.get("title"), job.get("team"), job.get("location"),
@@ -684,6 +690,8 @@ def create_job(job: dict, _=Depends(require_auth)):
         json.dumps(job.get("criteria",[])),
         (job.get("ai_requirements") or ""),
         job.get("rejection_template","") or "",
+        (job.get("contact_email_subject") or ""),
+        (job.get("contact_email_body") or ""),
     ))
     db.commit()
     new_id = cur.lastrowid
@@ -696,7 +704,7 @@ def update_job(job_id: int, job: dict, _=Depends(require_auth)):
     db = get_db()
     db.execute("""
         UPDATE jobs SET title=?,team=?,location=?,remote=?,seniority=?,
-        type=?,description=?,status=?,questions=?,criteria=?,ai_requirements=?,rejection_template=? WHERE id=?
+        type=?,description=?,status=?,questions=?,criteria=?,ai_requirements=?,rejection_template=?,contact_email_subject=?,contact_email_body=? WHERE id=?
     """, (
         job.get("title"), job.get("team"), job.get("location"),
         job.get("remote"), job.get("seniority"), job.get("type"),
@@ -705,6 +713,8 @@ def update_job(job_id: int, job: dict, _=Depends(require_auth)):
         json.dumps(job.get("criteria",[])),
         (job.get("ai_requirements") or ""),
         job.get("rejection_template","") or "",
+        (job.get("contact_email_subject") or ""),
+        (job.get("contact_email_body") or ""),
         job_id,
     ))
     db.commit()
@@ -890,7 +900,8 @@ def contact_applicant(applicant_id: int, _=Depends(require_auth)):
     db = get_db()
     row = db.execute(
         """
-        SELECT a.email, a.name, a.first_name, a.job_id, j.title as job_title
+        SELECT a.email, a.name, a.first_name, a.job_id, j.title as job_title,
+               j.contact_email_subject, j.contact_email_body
         FROM applicants a
         LEFT JOIN jobs j ON a.job_id = j.id
         WHERE a.id=?
@@ -910,11 +921,13 @@ def contact_applicant(applicant_id: int, _=Depends(require_auth)):
     if not row["email"]:
         return {"ok": True, "mail_sent": False, "mail_error": "Applicant has no email", "status": "contacted"}
 
-    # Subject from env overrides JSON; otherwise use JSON default.
     cp = load_copy()
-    subj = (get_config("CONTACT_EMAIL_SUBJECT", CONTACT_EMAIL_SUBJECT) or "").strip() or (
-        (((cp.get("emails") or {}).get("contact") or {}).get("subject") if isinstance(cp, dict) else "") or "Laminar Careers — Next steps"
+    default_subj = (
+        (((cp.get("emails") or {}).get("contact") or {}).get("subject") if isinstance(cp, dict) else "")
+        or "Laminar Careers — Next steps"
     )
+    job_subj = (row["contact_email_subject"] or "").strip() if row else ""
+    job_body = (row["contact_email_body"] or "").strip() if row else ""
 
     booking = (
         get_config("CONTACT_BOOKING_URL", "").strip()
@@ -922,7 +935,19 @@ def contact_applicant(applicant_id: int, _=Depends(require_auth)):
         or get_config("TEAMS_BOOKING_LINK", "").strip()
         or CONTACT_BOOKING_URL
     )
-    body = build_contact_email(row["first_name"] or row["name"] or "there", row["job_title"] or "", booking)
+    nm = (row["first_name"] or row["name"] or "there").strip() or "there"
+    jt = (row["job_title"] or "").strip() or "the position"
+    url = (booking or "").strip() or "(booking link missing)"
+
+    # Subject: per-job override, else env, else JSON default.
+    subj = job_subj or (get_config("CONTACT_EMAIL_SUBJECT", CONTACT_EMAIL_SUBJECT) or "").strip() or default_subj
+    subj = _tmpl(subj, name=nm, job_title=jt, booking_link=url)
+
+    # Body: per-job override (templated), else shared builder from JSON / fallback.
+    if job_body:
+        body = _tmpl(job_body, name=nm, job_title=jt, booking_link=url)
+    else:
+        body = build_contact_email(nm, jt, booking)
     try:
         send_email(row["email"], subj, body)
         mail_sent = True

@@ -59,8 +59,8 @@ def _ensure_job(conn: sqlite3.Connection, job_id: Optional[int]) -> int:
 
     cur = conn.execute(
         """
-        INSERT INTO jobs (public_id,title,team,location,remote,seniority,type,description,status,questions,criteria,ai_requirements,rejection_template)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+        INSERT INTO jobs (public_id,title,team,location,remote,seniority,type,description,status,questions,criteria,ai_requirements,rejection_template,contact_email_subject,contact_email_body)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """,
         (
             "local-test",
@@ -75,6 +75,8 @@ def _ensure_job(conn: sqlite3.Connection, job_id: Optional[int]) -> int:
             "[]",
             "[]",
             "Be strict about evidence. Prefer concrete, CV-supported claims. Penalize missing relevant experience.",
+            "",
+            "",
             "",
         ),
     )

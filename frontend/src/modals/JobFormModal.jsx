@@ -12,13 +12,27 @@ function defaultRejectionBody() {
   return (typeof b === "string" && b.trim()) ? b.trim() : FALLBACK_REJECTION_BODY;
 }
 
-/** API may omit or empty rejection_template; show the same default the backend uses when sending. */
+function defaultContactSubject() {
+  const s = COPY.emails?.contact?.subject;
+  return (typeof s === "string" && s.trim()) ? s.trim() : "Laminar Careers — Next steps";
+}
+
+function defaultContactBody() {
+  const b = COPY.emails?.contact?.body;
+  return typeof b === "string" ? b : "";
+}
+
+/** API may omit or empty fields; show the same defaults the backend uses when sending. */
 function jobToFormState(row) {
   if (!row) return null;
-  const stored = row.rejection_template != null ? String(row.rejection_template).trim() : "";
+  const storedRej = row.rejection_template != null ? String(row.rejection_template).trim() : "";
+  const cs = row.contact_email_subject != null ? String(row.contact_email_subject).trim() : "";
+  const cb = row.contact_email_body != null ? String(row.contact_email_body).trim() : "";
   return {
     ...row,
-    rejection_template: stored || defaultRejectionBody(),
+    contact_email_subject: cs || defaultContactSubject(),
+    contact_email_body: cb || defaultContactBody(),
+    rejection_template: storedRej || defaultRejectionBody(),
     ai_requirements: row.ai_requirements != null ? String(row.ai_requirements) : "",
   };
 }
@@ -38,6 +52,8 @@ export default function JobFormModal({ initial, onClose, onSave }) {
       criteria: [],
       ai_requirements: "",
       rejection_template: defaultRejectionBody(),
+      contact_email_subject: defaultContactSubject(),
+      contact_email_body: defaultContactBody(),
     }),
     []
   );
@@ -80,11 +96,15 @@ export default function JobFormModal({ initial, onClose, onSave }) {
   const valid = form.title && form.description && form.questions.length > 0;
   const qReady = (qForm.label || "").trim().length > 0 && (qForm.options || "").trim().length > 0;
 
-  const contactTpl = COPY.emails?.contact || {};
-  const aiLines = (form.ai_requirements || "")
-    .split("\n")
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const mailFieldStyle = {
+    background: "#141414",
+    borderRadius: 12,
+    padding: "12px 14px",
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+    fontSize: 12,
+    color: T.mutedL,
+    boxSizing: "border-box",
+  };
 
   return (
     <div
@@ -157,85 +177,72 @@ export default function JobFormModal({ initial, onClose, onSave }) {
           </div>
         </div>
 
-        {/* Global reference: contact (next steps) email — same source as backend */}
+        {/* Contact mail — stored on this job; defaults from editable_text_content.json */}
         <div style={{ marginBottom: 22 }}>
-          <div style={{ fontFamily: "'Afacad Flux',sans-serif", fontWeight: 600, fontSize: 16, color: T.white, marginBottom: 6 }}>
-            Next steps (contact) email — reference
+          <div style={{ fontFamily: "'Afacad Flux',sans-serif", fontWeight: 600, fontSize: 16, color: T.white, marginBottom: 8 }}>
+            Contact mail
           </div>
-          <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.muted, marginBottom: 10, lineHeight: 1.6 }}>
-            Sent when you mark an applicant as <span style={{ color: T.pink }}>Contacted</span>. Copy lives in{" "}
-            <code style={{ color: T.mutedL }}>editable_text_content.json</code> → <code style={{ color: T.mutedL }}>emails.contact</code>. Placeholders:{" "}
+          <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.muted, marginBottom: 12, lineHeight: 1.6 }}>
+            Sent when you mark an applicant as <span style={{ color: T.pink }}>Contacted</span>. Saved on this position. Placeholders:{" "}
             <span style={{ color: T.pink }}>{`{name}`}</span>, <span style={{ color: T.pink }}>{`{job_title}`}</span>,{" "}
-            <span style={{ color: T.pink }}>{`{booking_link}`}</span>.
+            <span style={{ color: T.pink }}>{`{booking_link}`}</span>. Clear subject or body and save to fall back to global defaults from JSON / env.
           </div>
-          <div
-            style={{
-              background: "#141414",
-              border: `1px solid ${T.border}`,
-              borderRadius: 12,
-              padding: "12px 14px",
-              fontFamily: "ui-monospace, monospace",
-              fontSize: 12,
-              color: T.mutedL,
-              whiteSpace: "pre-wrap",
-              lineHeight: 1.55,
-            }}
-          >
-            <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 11, color: T.muted, marginBottom: 8 }}>
-              Subject: {contactTpl.subject || "—"}
-            </div>
-            {contactTpl.body || "—"}
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <Input
+              label="Subject"
+              value={form.contact_email_subject || ""}
+              onChange={(e) => set("contact_email_subject", e.target.value)}
+              style={{ ...mailFieldStyle, border: `1px solid ${T.border}`, minHeight: 44 }}
+            />
+            <Input
+              label="Body"
+              value={form.contact_email_body || ""}
+              onChange={(e) => set("contact_email_body", e.target.value)}
+              multiline
+              rows={12}
+              style={{ ...mailFieldStyle, border: `1px solid ${T.border}`, minHeight: 160 }}
+            />
           </div>
         </div>
 
-        {/* Rejection email — per job; default from editable_text_content.json */}
+        {/* Rejection email */}
         <div style={{ marginBottom: 22 }}>
-          <div style={{ fontFamily: "'Afacad Flux',sans-serif", fontWeight: 600, fontSize: 16, color: T.white, marginBottom: 10 }}>
-            Rejection email (this position)
+          <div style={{ fontFamily: "'Afacad Flux',sans-serif", fontWeight: 600, fontSize: 16, color: T.white, marginBottom: 8 }}>
+            Rejection email
           </div>
-          <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.muted, marginBottom: 10, lineHeight: 1.6 }}>
-            Stored on this job. Default text comes from <code style={{ color: T.mutedL }}>emails.rejection</code> in{" "}
-            <code style={{ color: T.mutedL }}>editable_text_content.json</code>. Use <span style={{ color: T.pink }}>{`{name}`}</span> for the applicant
-            name. Subject is always “Laminar Careers”. Clear the field and save to rely on the global default from JSON.
+          <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.muted, marginBottom: 12, lineHeight: 1.6 }}>
+            Saved on this position. Use <span style={{ color: T.pink }}>{`{name}`}</span> for the applicant. Outbound subject is “Laminar Careers”. Default
+            copy in <code style={{ color: T.mutedL }}>emails.rejection</code> — clear and save to use that default.
           </div>
           <Input
             label=""
             value={form.rejection_template || ""}
             onChange={(e) => set("rejection_template", e.target.value)}
             multiline
+            rows={12}
             required={false}
+            style={{ ...mailFieldStyle, border: `1px solid ${T.border}`, minHeight: 160 }}
           />
         </div>
 
         {/* AI assessment */}
         <div style={{ marginBottom: 22 }}>
-          <div style={{ fontFamily: "'Afacad Flux',sans-serif", fontWeight: 600, fontSize: 16, color: T.white, marginBottom: 10 }}>
-            AI assessment requirements{" "}
-            <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.muted, fontWeight: 400 }}>
-              — non-deterministic guidelines for the model
-            </span>
+          <div style={{ fontFamily: "'Afacad Flux',sans-serif", fontWeight: 600, fontSize: 16, color: T.white, marginBottom: 8 }}>
+            AI assessment
           </div>
-          <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.muted, marginBottom: 10, lineHeight: 1.6 }}>
-            One per line. Used to generate a 0–5 AI score with pros/cons. This never blocks applicants.
+          <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.muted, marginBottom: 12, lineHeight: 1.6 }}>
+            One guideline per line (same monospace box). Used for the 0–5 AI score and pros/cons. Does not block applicants.
           </div>
           <Input
             label=""
             value={form.ai_requirements || ""}
             onChange={(e) => set("ai_requirements", e.target.value)}
             multiline
+            rows={12}
             required={false}
             placeholder={"e.g.\nStrong communication with clients\nPayments experience (issuer/acquirer)\nComfortable owning ambiguous work"}
+            style={{ ...mailFieldStyle, border: `1px solid ${T.border}`, minHeight: 160 }}
           />
-          {aiLines.length > 0 && (
-            <div style={{ marginTop: 12 }}>
-              <div style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 11, color: T.muted, marginBottom: 6 }}>Preview (as bullet list for the model)</div>
-              <ul style={{ margin: 0, paddingLeft: 18, fontFamily: "'DM Sans',sans-serif", fontSize: 12, color: T.mutedL, lineHeight: 1.55 }}>
-                {aiLines.map((line, idx) => (
-                  <li key={idx}>{line}</li>
-                ))}
-              </ul>
-            </div>
-          )}
         </div>
 
         {/* Questions */}
